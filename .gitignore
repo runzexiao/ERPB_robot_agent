@@ -1,1 +1,4 @@
 ERPB_robot_agent/.env
+# 忽略所有 .pyc 文件
+*.pyc
+ERPB_robot_agent/__pycache__/
