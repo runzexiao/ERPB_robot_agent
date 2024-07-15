@@ -1,0 +1,31 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/xiao/cmd_val_ws/install/rqt_mocap_control/include/**",
+        "/home/xiao/cmd_val_ws/install/mocap_robot_gt_msgs/include/**",
+        "/home/xiao/cmd_val_ws/install/mocap_optitrack_driver/include/**",
+        "/home/xiao/cmd_val_ws/install/mocap_msgs/include/**",
+        "/home/xiao/cmd_val_ws/install/mocap_marker_viz_srvs/include/**",
+        "/home/xiao/cmd_val_ws/install/mocap_control/include/**",
+        "/home/xiao/cmd_val_ws/install/mocap_control_msgs/include/**",
+        "/home/xiao/ros2_ws/install/openslam_gmapping/include/**",
+        "/home/xiao/uros_ws/install/micro_ros_agent/include/**",
+        "/home/xiao/uros_ws/install/micro_ros_msgs/include/**",
+        "/home/xiao/dev_ws/install/learning_interface/include/**",
+        "/opt/ros/humble/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}
