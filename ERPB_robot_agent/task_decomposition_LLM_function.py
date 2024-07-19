@@ -22,38 +22,7 @@ api_key = os.getenv('OPENAI_API_KEY')
 llm = ChatOpenAI(temperature=0.0, openai_api_key=api_key, model_name='gpt-4o')
 
 
-def create_data_packet(task_list, robot_id):
-    temp_id_map = {}
-    local_dependency_graph = {}
-    current_temp_id = 1
 
-    # Assign temporary IDs
-    for task in task_list:
-        temp_id = str(current_temp_id)
-        current_temp_id += 1
-        task['Temp id'] = temp_id
-        task['Robot id'] = robot_id
-        temp_id_map[task['Content']] = temp_id
-
-    # Generate dependency graph based on task type
-    for task in task_list:
-        temp_id = task['Temp id']
-        task_type = task['Task type']
-        dependencies = []
-
-        if task_type == 'My task':
-            dependencies = [temp_id_map[t['Content']] for t in task_list if t['Task type'] == 'preliminary task']
-        elif task_type == 'subsequent task':
-            dependencies = [temp_id_map[t['Content']] for t in task_list if t['Task type'] == 'My task']
-
-        local_dependency_graph[temp_id] = dependencies
-
-    data_packet = {
-        'Task list': task_list,
-        'Local dependency graph': local_dependency_graph
-    }
-
-    return data_packet
 
 
 def create_task_string(task_list):
@@ -77,10 +46,9 @@ def decompose_task(
     overall_task_dict, 
     my_capability, 
     environmental_information, 
-    knowledge_input_list, 
+    knowledge_needed_input, 
     knowledge_of_decomposition,
     knowledge_template,
-    robot_id,
     start_from_scratch=True
 ):
     Decomposed_Task_list = []
@@ -135,7 +103,7 @@ def decompose_task(
 
         # Extract knowledge input
         print("Extracting knowledge input...")
-        if knowledge_input_list != "nothing":
+        if knowledge_needed_input != "nothing":
             Knowledge_input_schema = ResponseSchema(name="Dictionary T",
                                         description="Fill in the completed dictionary T.")
             Information_resuest_task_schema = ResponseSchema(name="Information request task",
@@ -163,7 +131,7 @@ def decompose_task(
             chain_knowledge_input_extract = LLMChain(llm=llm, prompt=Knowledge_input_extract_prompt_template)
 
             EKI_result = chain_knowledge_input_extract.run({
-                "Knowledge_input_list": knowledge_input_list,
+                "Knowledge_input_list": knowledge_needed_input,
                 "Task_content": Overall_Task,
                 "Environmental_information": environmental_information,
                 "EKI_format_instructions": EKI_format_instructions
@@ -414,13 +382,13 @@ def decompose_task(
     print("Final checker module complete.")
 
     # Create dataPacket
-    data_packet = create_data_packet(Decomposed_Task_list, robot_id)
+
 
     print("Decomposition complete. Data packet created.")
     print("Final Decomposed Task List:", Decomposed_Task_list)
     print("Suggestion Task List:", Suggestion_Task_list)
 
-    return data_packet, Decomposed_Task_list, Suggestion_Task_list
+    return  Decomposed_Task_list, Suggestion_Task_list
 
 
 if __name__ == "__main__":
@@ -445,7 +413,7 @@ if __name__ == "__main__":
     }
 
 
-    knowledge_input_list = """
+    knowledge_needed_input = """
     '''json
     {
     "Installation location of the water pump": string // Please fill in the coordinates or representative letter of the water pump installation location. If neither is explicitly specified, this item should be filled in as unknown.
@@ -481,19 +449,18 @@ if __name__ == "__main__":
     """
     robot_id = 'robot_1'
     start_from_scratch = True
+    decom_id = "3" 
 
-    data_packet, decomposed_task_list, suggestion_task_list = decompose_task(
+    decomposed_task_list, suggestion_task_list = decompose_task(
         overall_task_dict, 
         my_capability, 
         environmental_information, 
-        knowledge_input_list, 
+        knowledge_needed_input, 
         knowledge_of_decomposition,
         knowledge_template,
-        robot_id, 
         start_from_scratch
     )
 
     # Print the results
-    print(json.dumps(data_packet, indent=2))
     print(decomposed_task_list)
     print(suggestion_task_list)

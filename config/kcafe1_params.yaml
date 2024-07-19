@@ -3,10 +3,22 @@ Ability_list:
   - 'Connect the water pump to the drainage pipe'
   - 'Lifting objects such as piles and pumps'
 
+knowledge_of_decomposition : |
+    All tasks to be published should adhere to the following JSON format:
+    '''json
+    {
+    "Task type": string // The type of task to be published. This type should be chosen from one of the following: preliminary task, collaborative task, subsequent task, independent task, or incremental task.
+    "Content": string // The specific content of the task to be published.
+    "Priority": int // if (the type of task to be published is a preliminary task) then [fill in %d], 
+    elseif (the type of task to be published is a collaborative task, independent task, or incremental task) then [fill in %d], 
+    elseif (the type of task to be published is a subsequent task) then [fill in %d].
+    }'''
+    """ % (overall_task_dict["Priority"] + 1, overall_task_dict["Priority"], overall_task_dict["Priority"] - 1)
+
 Install_the_water_pump:
   content: 'Install the water pump'
   efficiency: 0.4
-  knowledge: |
+  knowledge_template: |
     if (there is no passable path from the point {Current location of the robot} to the point {Installation location of the water pump})
     then [
       if ({Ground state} == hard)

@@ -17,6 +17,7 @@ import threading
 import copy
 import yaml
 import os
+import json
 
 
 
@@ -96,7 +97,7 @@ class BiddingNode(Node):
             callback_group=self.callback_group
         )
         self.task_decomposition_service_client = self.create_client(
-            DictToBool, 
+            StringToBool, 
             'task_decomposition_service',
             callback_group=self.callback_group
         )
@@ -243,8 +244,9 @@ class BiddingNode(Node):
 
                             }
                         print(f"Decompose packet: {decompose_packet}")
-                        reqd = DictToBool.Request()
-                        reqd.data = self.dictionary_request_fill_in(decompose_packet)
+                        reqd = StringToBool.Request()
+                        # reqd.data = self.dictionary_request_fill_in(decompose_packet)
+                        reqd.data =json.dumps(decompose_packet)
                         self.task_decomposition_service_client.call_async(reqd)
 
                         

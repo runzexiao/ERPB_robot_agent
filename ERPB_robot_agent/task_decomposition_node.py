@@ -8,7 +8,7 @@ import rclpy
 from rclpy.node import Node
 from my_interfaces.msg import Dictionary, KeyValue
 from std_msgs.msg import String
-from my_interfaces.srv import DictToBool, TaskStart, BlackBoardAdd
+from my_interfaces.srv import DictToBool, StringToBool, StringToDict
 from ament_index_python.packages import get_package_share_directory
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
@@ -31,9 +31,6 @@ class TaskDecompositionNode(Node):
         self.environmental_information = {}
         self.environmental_info_ready = False
 
-        # Load parameters
-        self.load_parameters()
-
         # Subscribers
         self.environment_info_subscriber = self.create_subscription(
             String,
@@ -45,24 +42,24 @@ class TaskDecompositionNode(Node):
 
         # Service Clients
         self.task_manager_start_service_client = self.create_client(
-            TaskStart,
+            StringToBool,
             'task_manager_start_service',
             callback_group=self.callback_group
         )
         self.bidding_evaluation_start_service_client = self.create_client(
-            TaskStart,
+            StringToBool,
             'bidding_evaluation_start_service',
             callback_group=self.callback_group
         )
         self.black_board_add_service_client = self.create_client(
-            BlackBoardAdd,
+            StringToDict,
             '/black_board_add_service',
             callback_group=self.callback_group
         )
 
         # Service Server
         self.task_decomposition_service = self.create_service(
-            DictToBool,
+            StringToBool,
             'task_decomposition_service',
             self.task_decomposition_callback,
             callback_group=self.callback_group
@@ -77,14 +74,66 @@ class TaskDecompositionNode(Node):
 
         self.get_logger().info(f'Task Decomposition Node of {namespace} is ready.')
 
-    def load_parameters(self):
+    def load_parameters(self, ability):
+        ability_slash = ability.replace(' ', '_')
         my_package_share_dir = get_package_share_directory(self.pkg_name)
         yaml_file_path = os.path.join(my_package_share_dir, 'config', self.params_file_name)
         with open(yaml_file_path, 'r') as file:
             config = yaml.safe_load(file)
 
-        self.knowledge_input_list = config['Knowledge_input_list']
-        self.get_logger().info(f'Knowledge input list: {self.knowledge_input_list}')
+        self.knowledge_needed_input = config[ability_slash]['knowledge_needed_input']
+        self.knowledge_of_decomposition = config['knowledge_of_decomposition']
+        self.knowledge_template = config[ability_slash]['knowledge_template']
+        self.get_logger().info(f'Knowledge input list: {self.knowledge_needed_input}')
+
+    def create_data_packet_for_blackboard(self, task_list, robot_id, decompose_task_id):
+        temp_id_map = {}
+        local_dependency_graph = {}
+        current_temp_id = 1
+
+        # Assign temporary IDs
+        for task in task_list:
+            temp_id = str(current_temp_id)
+            current_temp_id += 1
+            task['Temp id'] = temp_id
+            task['Boss id'] = robot_id
+            temp_id_map[task['Content']] = temp_id
+
+        # Generate dependency graph based on task type
+        for task in task_list:
+            temp_id = task['Temp id']
+            task_type = task['Task type']
+            dependencies = []
+
+            if task_type == 'My task':
+                dependencies = [temp_id_map[t['Content']] for t in task_list if t['Task type'] == 'preliminary task']
+            elif task_type == 'subsequent task':
+                dependencies = [temp_id_map[t['Content']] for t in task_list if t['Task type'] == 'My task']
+
+            local_dependency_graph[temp_id] = dependencies
+
+        data_packet = {
+            'Task list': task_list,
+            'Local dependency graph': local_dependency_graph,
+            'Decomposed from task id': decompose_task_id
+        }
+        return data_packet
+    
+    def create_data_packet_for_manager(self, task_list, temp_to_global_id_map, my_ability, decomposed_task_id, decomposed_task_type):
+            
+        for task in task_list:
+            temp_id = task.get("Temp id")
+            if temp_id in temp_to_global_id_map:
+                task["Task id"] = temp_to_global_id_map[temp_id]
+                del task["Temp id"]
+        
+        data_packet = {
+            'Task list': task_list,
+            'My ability': my_ability,
+            'Decomposed task id': decomposed_task_id,
+            'Decomposed task type': decomposed_task_type
+        }
+        return data_packet
 
     def wait_for_services(self, service_clients):
         while True:
@@ -112,7 +161,7 @@ class TaskDecompositionNode(Node):
     def environment_info_callback(self, msg):
         self.environmental_information = json.loads(msg.data)
         self.environmental_info_ready = True
-        self.get_logger().info(f'Updated environmental information: {self.environmental_information}')
+        #self.get_logger().info(f'Updated environmental information: {self.environmental_information}')
 
     def task_decomposition_callback(self, request, response):
         self.get_logger().info("Starting task decomposition...")
@@ -121,73 +170,63 @@ class TaskDecompositionNode(Node):
             self.get_logger().error('Environmental information not ready.')
             response.success = False
             return response
+        
 
         # 从请求中提取信息
-        request_dict = {entry.key: entry.value for entry in request.data.entries}
-        boss_id = request_dict['Boss id']
+        # request_dict = {entry.key: entry.value for entry in request.data.entries}
+        request_dict = json.loads(request.data)
+        my_id = request_dict['My id']
         task_content = request_dict['Task content']
         priority = request_dict['Priority']
         my_ability = request_dict['My ability']
         from_start_flag = request_dict['From start flag']
         decomposed_task_type = request_dict['Decomposed task type']
-        knowledge_of_decomposition = request_dict['Knowledge of decomposition']
-        knowledge_template = request_dict['Knowledge template']
+        decomposed_task_id = request_dict['Decomposed task id']
+        
+        self.load_parameters(my_ability)
+        
 
         self.get_logger().info(f'Task content: {task_content}')
         self.get_logger().info(f'My ability: {my_ability}')
 
         overall_task_dict = {"Content": task_content, "Priority": priority}
-
+        # rclpy.spin_once(self, timeout_sec=0.1)  # 确保其他回调函数可以被调用
         # Call the task decomposition function
-        data_packet, decomposed_task_list, suggestion_task_list = decompose_task(
+        decomposed_task_list, suggestion_task_list = decompose_task(
             overall_task_dict,
             my_ability,
             self.environmental_information,
-            self.knowledge_input_list,
-            knowledge_of_decomposition,
-            knowledge_template,
-            self.my_robot_id,
-            start_from_scratch=from_start_flag.lower() == 'true'
+            self.knowledge_needed_input,
+            self.knowledge_of_decomposition,
+            self.knowledge_template,
+            from_start_flag
         )
 
         self.get_logger().info(f'Decomposed task list: {decomposed_task_list}')
-        self.get_logger().info(f'Task dependencies: {data_packet["Local dependency graph"]}')
+        data_packet_for_blackboard = self.create_data_packet_for_blackboard(decomposed_task_list, self.my_robot_id, decomposed_task_id)
+        # Request black_board_add_service
+        black_board_add_req = StringToDict.Request()
+        black_board_add_req.data = json.dumps(data_packet_for_blackboard)
+        black_board_add_resp = self.black_board_add_service_client.call(black_board_add_req)
+        
+        temp_to_global_id_map = {entry.key: entry.value for entry in black_board_add_resp.dict.entries}
 
+        data_packet_for_manager = self.create_data_packet_for_manager(data_packet_for_blackboard['Task list'], temp_to_global_id_map, my_ability, decomposed_task_id, decomposed_task_type)
+ 
         # Request task_manager_start_service
-        task_manager_req = TaskStart.Request()
-        task_manager_req.data = self.dictionary_request_fill_in({
-            'decomposed_task_list': decomposed_task_list,
-            'knowledge_input_list': self.knowledge_input_list,
-            'task_id': decomposed_task_type
-        })
+        task_manager_req = StringToBool.Request()
+        task_manager_req.data = json.dumps(data_packet_for_manager)
+        self.get_logger().info(f'task_manager_req:{task_manager_req.data}')
         self.task_manager_start_service_client.call_async(task_manager_req)
 
         # Request bidding_evaluation_start_service
-        bidding_evaluation_req = TaskStart.Request()
-        bidding_evaluation_req.data = self.dictionary_request_fill_in({
-            'decomposed_task_list': decomposed_task_list,
-            'knowledge_input_list': self.knowledge_input_list,
-            'task_id': decomposed_task_type
-        })
+        bidding_evaluation_req = StringToBool.Request()
+        bidding_evaluation_req.data = json.dumps(data_packet_for_manager['Task list'])
+        self.get_logger().info(f'bidding_evaluation_req:{bidding_evaluation_req.data}')
         self.bidding_evaluation_start_service_client.call_async(bidding_evaluation_req)
-
-        # Request black_board_add_service
-        black_board_add_req = BlackBoardAdd.Request()
-        black_board_add_req.data = self.dictionary_request_fill_in({
-            'decomposed_task_list': decomposed_task_list,
-            'task_dependencies': data_packet["Local dependency graph"],
-            'task_id': decomposed_task_type
-        })
-        black_board_add_resp = self.black_board_add_service_client.call(black_board_add_req)
-
-        if black_board_add_resp.success:
-            new_task_id = black_board_add_resp.task_id
-            self.get_logger().info(f'Task successfully added to black board with new task ID: {new_task_id}')
-        else:
-            self.get_logger().error(f'Failed to add task to black board.')
-
         response.success = True
         return response
+
 
 
 def main(args=None):
