@@ -221,7 +221,7 @@ class TaskDecompositionNode(Node):
 
         # Request bidding_evaluation_start_service
         bidding_evaluation_req = StringToBool.Request()
-        bidding_evaluation_req.data = json.dumps(data_packet_for_manager['Task list'])
+        bidding_evaluation_req.data = json.dumps({'Task list': data_packet_for_manager['Task list'], 'decomposed task id': decomposed_task_id})
         self.get_logger().info(f'bidding_evaluation_req:{bidding_evaluation_req.data}')
         self.bidding_evaluation_start_service_client.call_async(bidding_evaluation_req)
         response.success = True

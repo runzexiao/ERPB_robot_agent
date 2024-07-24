@@ -35,8 +35,9 @@ setup(
             'operator_task_processing_node = ERPB_robot_agent.operator_task_processing_node:main',
             'environmental_information_publisher_node = ERPB_robot_agent.environmental_information_publisher_node:main',
             'task_decomposition_node = ERPB_robot_agent.task_decomposition_node:main',
-            'decomposition_test = ERPB_robot_agent.decomposition_test:main'
-
+            'decomposition_test = ERPB_robot_agent.decomposition_test:main',
+            'bidding_evaluation_node = ERPB_robot_agent.bidding_evaluation_node:main',
+            'bidding_evaluation_test = ERPB_robot_agent.bidding_evaluation_test:main',
 
         ],
     },

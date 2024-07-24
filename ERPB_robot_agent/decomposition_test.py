@@ -25,12 +25,12 @@ class DecompositionTestNode(Node):
             callback_group=self.callback_group
         )
         
-        self.bidding_evaluation_start_service = self.create_service(
-            StringToBool,
-            'bidding_evaluation_start_service',
-            self.bidding_evaluation_start_callback,
-            callback_group=self.callback_group
-        )
+        # self.bidding_evaluation_start_service = self.create_service(
+        #     StringToBool,
+        #     'bidding_evaluation_start_service',
+        #     self.bidding_evaluation_start_callback,
+        #     callback_group=self.callback_group
+        # )
         
         self.black_board_add_service = self.create_service(
             StringToDict,
@@ -75,13 +75,13 @@ class DecompositionTestNode(Node):
         response.success = True
         return response
 
-    def bidding_evaluation_start_callback(self, request, response):
-        self.get_logger().info(f'Received bidding evaluation start request: {request.data}')
-        task_list = json.loads(request.data)
-        # Here you would add your bidding evaluation logic
-        # Example: evaluating bids
-        response.success = True
-        return response
+    # def bidding_evaluation_start_callback(self, request, response):
+    #     self.get_logger().info(f'Received bidding evaluation start request: {request.data}')
+    #     task_list = json.loads(request.data)
+    #     # Here you would add your bidding evaluation logic
+    #     # Example: evaluating bids
+    #     response.success = True
+    #     return response
 
     def black_board_add_callback(self, request, response):
         self.get_logger().info(f'Received black board add request: {request.data}')

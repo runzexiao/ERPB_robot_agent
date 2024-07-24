@@ -1,49 +1,45 @@
 import rclpy
 from rclpy.node import Node
-from std_msgs.msg import String
-import json
+from launch import LaunchDescription
+from launch_ros.actions import Node as LaunchNode
+from launch import LaunchService
+from multiprocessing import Process
 
-class PathInfoSubscriber(Node):
+def launch_node(package_name, executable_name, namespace):
+    ld = LaunchDescription([
+        LaunchNode(
+            package=package_name,
+            executable=executable_name,
+            namespace=namespace,
+            output='screen'
+        )
+    ])
+    ls = LaunchService()
+    ls.include_launch_description(ld)
+    ls.run()
 
+class NodeStarter(Node):
     def __init__(self):
-        super().__init__('environmental_information_subscriber_node')
-        self.subscription = self.create_subscription(
-            String,
-            '/environmetal_information',
-            self.listener_callback,
-            10)
-        self.subscription  # 防止未使用的变量警告
+        super().__init__('test_node')
+        self.get_logger().info('Node Starter has been started.')
+        # 启动其他节点
+        self.start_other_node('ERPB_robot_agent', 'start_node', 'robot1')
+        self.start_other_node('ERPB_robot_agent', 'bidding_node', 'robot1')
+        # 创建计时器，每秒调用一次 timer_callback
+        self.timer = self.create_timer(1.0, self.timer_callback)
 
-    def listener_callback(self, msg):
-        self.get_logger().info('Received message: "%s"' % msg.data)
-        data = json.loads(msg.data)
-        self.process_data(data)
+    def start_other_node(self, package_name, executable_name, namespace):
+        p = Process(target=launch_node, args=(package_name, executable_name, namespace))
+        p.start()
 
-    def process_data(self, data):
-        # 在这里处理接收到的数据
-        path_info = data["path_information"]
-        current_location = data["current_robot_location"]
-        water_pump_location = data["water_pump_location"]
-        drainage_pipe_location = data["drainage_pipe_location"]
-        ground_condition = data["ground_condition"]
-
-        if path_info["status"]:
-            print(current_location[0]+current_location[1])
-
-
-            # 打印解析后的数据
-            self.get_logger().info('Path Information: start_point=%s, end_point=%s, status=%s' % 
-                                (path_info["start_point"], path_info["end_point"], path_info["status"]))
-            self.get_logger().info('Current Robot Location: %s' % current_location)
-            self.get_logger().info('Water Pump Location: %s' % water_pump_location)
-            self.get_logger().info('Drainage Pipe Location: %s' % drainage_pipe_location)
-            self.get_logger().info('Ground Condition: %s' % ground_condition)
+    def timer_callback(self):
+        self.get_logger().info('Timer callback: NodeStarter is running.')
 
 def main(args=None):
     rclpy.init(args=args)
-    path_info_subscriber = PathInfoSubscriber()
-    rclpy.spin(path_info_subscriber)
-    path_info_subscriber.destroy_node()
+    node_starter = NodeStarter()
+    rclpy.spin(node_starter)
+    node_starter.destroy_node()
     rclpy.shutdown()
 
 if __name__ == '__main__':
