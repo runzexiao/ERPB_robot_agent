@@ -1,16 +1,19 @@
+# ros2 service call /c30r_0/operator_task_input_service my_interfaces/srv/StringToBool "{data: 'Build a drainage pipe driven by a water pump from point [6,6] to point [10,10], with the water pump connected to the pipe at point [10,10].'}"
 import rclpy
 from rclpy.node import Node
 from my_interfaces.msg import Dictionaries
 from my_interfaces.srv import StringToBool
+from std_msgs.msg import String
+import json
 
 class StartNode(Node):
-    def __init__(self, namespace):
-        super().__init__('start_node', namespace=namespace)
+    def __init__(self):
+        super().__init__('start_node')
 
-        self.black_board_sub = self.create_subscription(
-            Dictionaries,
-            '/black_board_published',
-            self.black_board_callback,
+        self.broadcaster_sub = self.create_subscription(
+            String,
+            '/broadcaster_published',
+            self.broadcaster_callback,
             10
         )
         self.operator_called = False
@@ -19,9 +22,9 @@ class StartNode(Node):
         self.operator_task_processing_start_service_client = self.create_client(StringToBool, 'operator_task_processing_start_service')
         self.operator_task_service = self.create_service(StringToBool, 'operator_task_input_service', self.operator_task_callback)
         
-        self.wait_for_services()
+        # self.wait_for_services()
 
-        self.get_logger().info(f'Start Node of {namespace} is ready.')
+        self.get_logger().info(f'Start Node of {self.get_namespace()} is ready.')
     
     def wait_for_services(self):
         while True:
@@ -48,14 +51,17 @@ class StartNode(Node):
             response.success = True
         return response
     
-    def black_board_callback(self, msg):
-        if msg.dictionaries:  # If the message is not empty
-            if not self.start_bidding:
-                self.get_logger().info('Received non-empty black_board message.')
-                self.call_service('bidding_node_start_service', "start")
-                self.start_bidding = True
-        else:
-            self.get_logger().info('Waiting for non-empty black_board_published message.')
+    def broadcaster_callback(self, msg):
+        if not self.operator_called and not self.start_bidding:
+            task_list = json.loads(msg.data)
+            if task_list:  # If the message is not empty
+                if not self.start_bidding:
+                    self.get_logger().info('Received non-empty broadcaster message.')
+                    self.call_service('bidding_node_start_service', "start")
+                    self.start_bidding = True
+            else:
+                self.get_logger().info('Waiting for non-empty broadcaster_published message.')
+        
     
     def call_service(self, service_name, request_data):
         if service_name == 'bidding_node_start_service':
@@ -73,8 +79,7 @@ class StartNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    namespace = 'robot1'  # Example namespace, can be parameterized
-    node = StartNode(namespace)
+    node = StartNode()
     rclpy.spin(node)
     node.destroy_node()
     rclpy.shutdown()

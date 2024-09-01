@@ -9,6 +9,7 @@ from rclpy.node import Node
 from my_interfaces.msg import Dictionaries, Dictionary, KeyValue
 from my_interfaces.srv import StringToBool,DictToBool,TaskDependencies,BoolStringToBool
 from std_srvs.srv import Trigger,SetBool
+from std_msgs.msg import String
 from bidding_LLM_function import compare_ability_with_task_fast
 from ament_index_python.packages import get_package_share_directory
 from rclpy.callback_groups import ReentrantCallbackGroup
@@ -23,17 +24,21 @@ import json
 
 
 class BiddingNode(Node):
-    def __init__(self, namespace):
-        super().__init__('bidding_node', namespace=namespace)
+    def __init__(self):
+        super().__init__('bidding_node')
          # 使用 ReentrantCallbackGroup 允许并发回调
         self.callback_group = ReentrantCallbackGroup()
         ##Parameters
         #package name
         self.pkg_name = "ERPB_robot_agent"
-        #params file name
-        self.params_file_name = "kcafe1_params.yaml"
+
         # 机器人自身的id
-        self.my_robot_id = namespace
+        self.my_robot_id = self.get_namespace().lstrip('/')
+  
+        # 机器人自身id的文件名
+        #params file name
+        self.params_file_name = self.my_robot_id + "_params.yaml"
+        
         # 总体任务列表
         self.task_list =[]
       
@@ -51,10 +56,10 @@ class BiddingNode(Node):
         self.lock = threading.Lock()
         
         # Defination of Subscribers
-        self.black_board_sub = self.create_subscription(
-            Dictionaries,
-            '/black_board_published',
-            self.black_board_callback,
+        self.broadcaster_sub = self.create_subscription(
+            String,
+            '/broadcaster_published',
+            self.broadcaster_callback,
             10,
             callback_group=self.callback_group
         )
@@ -86,9 +91,9 @@ class BiddingNode(Node):
         )
 
         # Defination of Service_client
-        self.black_board_update_service_client = self.create_client(
-            DictToBool, 
-            '/black_board_update_service',
+        self.broadcaster_update_service_client = self.create_client(
+            StringToBool, 
+            '/broadcaster_task_info_update',
             callback_group=self.callback_group
         )
         self.get_task_dependencies_client = self.create_client(
@@ -105,8 +110,8 @@ class BiddingNode(Node):
        
     
         # Wait for services are already defined
-        self.wait_for_services([self.black_board_update_service_client, self.get_task_dependencies_client, self.task_decomposition_service_client])
-        self.get_logger().info(f'Bidding Node of {namespace} is ready.')
+        self.wait_for_services([self.broadcaster_update_service_client, self.get_task_dependencies_client, self.task_decomposition_service_client])
+        self.get_logger().info(f'Bidding Node of {self.my_robot_id} is ready.')
 
     def load_abilities(self):
         # 获取功能包的共享目录路径
@@ -156,29 +161,29 @@ class BiddingNode(Node):
 
     
     def wait_for_bidding_result(self, task_id):
-        print(456)
         while True:
             rclpy.spin_once(self, timeout_sec=0.1)  # 确保其他回调函数可以被调用
-            print(f"{self.bidding_result['task_id']}")
-            print(f"task_{task_id}")
-            if self.bidding_result["task_id"] == f"task_{task_id}":
+            self.get_logger().info(f"{self.bidding_result['task_id']}")
+            self.get_logger().info(f"{task_id}")
+            if self.bidding_result["task_id"] == task_id:
                 break
         return self.bidding_result["bidding_result"]
 
 
     def bid_for_task(self, task_id, ability, boss_robot_id):
-        
+        self.get_logger().info("Bid for task before service call")
         ability_slash= ability.replace(" ", "_")
         bid_packet = {
             'Robot id': self.my_robot_id,
             'Ability': ability,
-            'Efficiency': self.abilities_efficiency_dict[ability_slash]
+            'Efficiency': self.abilities_efficiency_dict[ability_slash],
+            'Task id': task_id
         }
         # Create a service client for bidding_evaluation_service
-        self.bidding_evaluation_update_service_client = self.create_client(DictToBool, f'/{boss_robot_id}/task_{task_id}/bidding_evaluation_update_service', callback_group=self.callback_group)
+        self.bidding_evaluation_update_service_client = self.create_client(StringToBool, f'/{boss_robot_id}/task_{task_id}/bidding_evaluation_update_service', callback_group=self.callback_group)
         self.wait_for_services([self.bidding_evaluation_update_service_client])
-        req = DictToBool.Request()
-        req.data = self.dictionary_request_fill_in(bid_packet)
+        req = StringToBool.Request()
+        req.data = json.dumps(bid_packet)
         self.get_logger().info(f"Bidding for task {task_id} with bid packet: {bid_packet} to {boss_robot_id}...")
         self.bidding_evaluation_update_service_client.call_async(req)
         bidding_result = self.wait_for_bidding_result(task_id)
@@ -190,12 +195,15 @@ class BiddingNode(Node):
                 
     def bidding_node_start_callback(self, request, response):
         self.bidding_t = request.data
-        print(self.bidding_t)
+        self.get_logger().info(self.bidding_t)
         while True:
-            rclpy.spin_once(self, timeout_sec=0.1)  # 确保其他回调函数可以被调用
+            rclpy.spin_once(self, timeout_sec=0.4)  # 确保其他回调函数可以被调用
+            self.get_logger().info('Bidding started')
             if self.bidding_t == "start":
+                self.get_logger().info('get start branch')
                 task_list_now = copy.deepcopy(self.task_list)
-                print(task_list_now)
+                # if self.task_list == []:
+                #     self.get_logger().info('task_list is empty')
                
             else:
                 self.td_request = TaskDependencies.Request()
@@ -206,24 +214,28 @@ class BiddingNode(Node):
                 task_list_now = [d for d in task_list_now_all if d["Task id"] in task_dependencies.reachable_tasks]
             
             task_list_now.sort(key=lambda x: x['Priority'], reverse=True)
-
+            self.get_logger().info(f'Sorted list for bidding {task_list_now}')
             for task in task_list_now:
                 task_id = task['Task id']
                 task_content = task['Content']
                 boss_robot_id = task['Boss id']
                 task_type = task['Task type']
                 priority = task['Priority']
+                Father_decomposed_from_task_id = task['Decomposed from task id']
+                Shadow_boss = task['Shadow boss']
+                # 判断任务是否已经被自己投标过
 
-
+                self.get_logger().info('Before compare')
                 # 跳过已经投标但被拒绝的任务和CAT_result_parser判别为false的任务
                 if task_id in self.rejected_task_ids or task_id in self.unscannable_task_ids:
                     continue
 
                 # 判断任务内容是否有自己能够完成的部分
                 #chosen_result, CAT_result_parser = compare_ability_with_task(task_content, self_abilities)
+                self.get_logger().info(f'self.ability_list:{self.ability_list}')
                 CAT_result_parser = compare_ability_with_task_fast(task_content, self.ability_list)
                 #print(chosen_result, CAT_result_parser)
-                print(f'Get ability to deal with the task: {CAT_result_parser}')
+                self.get_logger().info(f'Get ability to deal with the task: {CAT_result_parser}')
 
                 if CAT_result_parser:
                     # 投标
@@ -231,7 +243,7 @@ class BiddingNode(Node):
                     success = self.bid_for_task(task_id, CAT_result_parser, boss_robot_id)
                     if success:
                         # 假设投标成功后，结束任务处理循环
-                        print(f"Successfully bid for task {task_id}")
+                        self.get_logger().info(f"Successfully bid for task {task_id}")
                         #请求开启self.task_decomposition_service_client，并且把有关列表清空
                         decompose_packet = {
                                 'My id': self.my_robot_id,
@@ -240,27 +252,38 @@ class BiddingNode(Node):
                                 'My ability': CAT_result_parser,
                                 'From start flag': True,
                                 'Decomposed task type':task_type,
-                                'Decomposed task id':task_id
-
+                                'Decomposed task id':task_id,
+                                'Father decomposed from task id':Father_decomposed_from_task_id,
+                                'Boss id': boss_robot_id,
+                                'Shadow boss' : Shadow_boss
                             }
-                        print(f"Decompose packet: {decompose_packet}")
+                        self.get_logger().info(f"Decompose packet: {decompose_packet}")
                         reqd = StringToBool.Request()
                         # reqd.data = self.dictionary_request_fill_in(decompose_packet)
                         reqd.data =json.dumps(decompose_packet)
                         self.task_decomposition_service_client.call_async(reqd)
 
-                        
-                        #请求更新黑板的信息
-                        board_updated_packet = {
-                                'Task id': task_id,
-                                'Worker id': self.my_robot_id,
-                                'Task status':'Claimed' ,
-                            }
-                        print(f"Board updated packet: {board_updated_packet}")
-                        reqb = DictToBool.Request()
-                        reqb.data = self.dictionary_request_fill_in(board_updated_packet)
-                        self.black_board_update_service_client.call_async(reqb)
+                
 
+                        broadcaster_updated_packet1 = {
+                                'Task id': task_id,
+                                'key': 'Task status',
+                                'keyvalue': 'Claimed'
+                            }
+                        
+                        reqb1 = StringToBool.Request()
+                        reqb1.data = json.dumps(broadcaster_updated_packet1)
+                        self.broadcaster_update_service_client.call_async(reqb1)
+
+                        broadcaster_updated_packet2 = {
+                                'Task id': task_id,
+                                'key': 'Worker id',
+                                'keyvalue': self.my_robot_id
+                            }
+                        
+                        reqb2 = StringToBool.Request()
+                        reqb2.data = json.dumps(broadcaster_updated_packet2)
+                        self.broadcaster_update_service_client.call_async(reqb2)
 
 
                         break
@@ -272,7 +295,7 @@ class BiddingNode(Node):
                     self.unscannable_task_ids.add(task_id)
             else:
                 # 如果没有任务成功，则重新读取任务列表
-                #print("Re-reading task list...")
+                self.get_logger().info("Re-reading task list...")
                 
                 continue  # 重新开始while循环，不执行下面的break
 
@@ -288,20 +311,14 @@ class BiddingNode(Node):
         return response
     
     
-    def black_board_callback(self, msg):
+    def broadcaster_callback(self, msg):
         # 使用临时变量构建新的任务列表
-        new_task_list = []
+        new_task_list = json.loads(msg.data)
         
-        # 解析 Dictionaries 消息
-        for dict_msg in msg.dictionaries:
-            dict_item = {}
-            for key_value in dict_msg.entries:
-                dict_item[key_value.key] = key_value.value
-            new_task_list.append(dict_item)
         
         # 完成构建后再赋值给 self.task_list
         self.task_list = new_task_list
-        
+        # self.get_logger().info(f'Received published task list: {self.task_list}')
         
         # 打印解析后的字典列表
         # self.get_logger().info(f'Received task list: {self.task_list}')
@@ -317,8 +334,7 @@ class BiddingNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    namespace = 'robot1'  # Example namespace, can be parameterized
-    node = BiddingNode(namespace)
+    node = BiddingNode()
     # 使用 MultiThreadedExecutor
     executor = MultiThreadedExecutor()
     executor.add_node(node)

@@ -32,10 +32,10 @@ class DecompositionTestNode(Node):
         #     callback_group=self.callback_group
         # )
         
-        self.black_board_add_service = self.create_service(
+        self.broadcaster_add_service = self.create_service(
             StringToDict,
-            '/black_board_add_service',
-            self.black_board_add_callback,
+            '/broadcaster_add_service',
+            self.broadcaster_add_callback,
             callback_group=self.callback_group
         )
 
@@ -83,7 +83,7 @@ class DecompositionTestNode(Node):
     #     response.success = True
     #     return response
 
-    def black_board_add_callback(self, request, response):
+    def broadcaster_add_callback(self, request, response):
         self.get_logger().info(f'Received black board add request: {request.data}')
         data_packet = json.loads(request.data)
         task_list = data_packet['Task list']
@@ -121,7 +121,7 @@ class DecompositionTestNode(Node):
             "ground_condition": "hard"
         }
         msg.data = json.dumps(env_info)
-        self.environment_info_publisher.publish(msg)
+        #self.environment_info_publisher.publish(msg)
         self.environment_info_ready = True
         self.get_logger().info('Published environmental information.')
 
@@ -142,7 +142,9 @@ class DecompositionTestNode(Node):
             'My ability': 'Install the water pump',
             'From start flag': 'True',
             'Decomposed task type': 'operator',
-            'Decomposed task id': '0'
+            'Decomposed task id': '0',
+            'Father decomposed from task id':'11',
+            'Boss id':'robot0'
         }
         
         request.data = json.dumps(decompose_packet)

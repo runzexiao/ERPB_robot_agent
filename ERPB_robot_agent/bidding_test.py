@@ -11,10 +11,10 @@ class BiddingNodeTester(Node):
         self.first_start_flag = True
         self.publish_num = 0
         # Publisher
-        self.publisher = self.create_publisher(Dictionaries, 'black_board_published', 10)
+        self.publisher = self.create_publisher(Dictionaries, 'broadcaster_published', 10)
         
         # Create the service servers that BiddingNode requests
-        self.update_service = self.create_service(DictToBool, 'black_board_update_service', self.update_service_callback)
+        self.update_service = self.create_service(DictToBool, 'broadcaster_update_service', self.update_service_callback)
         self.dependencies_service = self.create_service(TaskDependencies, 'get_task_dependencies', self.dependencies_service_callback)
         self.decomposition_service = self.create_service(DictToBool, 'robot1/task_decomposition_service', self.decomposition_service_callback)
 
@@ -49,7 +49,7 @@ class BiddingNodeTester(Node):
         msg.dictionaries.append(task2)
         
         self.publisher.publish(msg)
-        # self.get_logger().info(f'Published task list {self.publish_num} to /black_board_published')
+        # self.get_logger().info(f'Published task list {self.publish_num} to /broadcaster_published')
         self.publish_num += 1
 
         self.call_start_service()

@@ -8,24 +8,26 @@ import rclpy
 from rclpy.node import Node
 from my_interfaces.msg import Dictionary, KeyValue
 from std_msgs.msg import String
-from my_interfaces.srv import DictToBool, StringToBool, StringToDict
+from my_interfaces.srv import DictToBool, StringToBool, StringToDict, StringToString
 from ament_index_python.packages import get_package_share_directory
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 import yaml
 from task_decomposition_LLM_function import decompose_task
+from same_test_LLM_function import compare_two_text_content
 import json
 
 
 class TaskDecompositionNode(Node):
-    def __init__(self, namespace):
-        super().__init__('task_decomposition_node', namespace=namespace)
+    def __init__(self):
+        super().__init__('task_decomposition_node')
         # 使用 ReentrantCallbackGroup 允许并发回调
         self.callback_group = ReentrantCallbackGroup()
         # Parameters
         self.pkg_name = "ERPB_robot_agent"
-        self.params_file_name = "kcafe1_params.yaml"
-        self.my_robot_id = namespace
+        self.my_robot_id = self.get_namespace().lstrip('/')
+        self.params_file_name = self.my_robot_id  + "_params.yaml"
+        
 
         # Initialize environmental information
         self.environmental_information = {}
@@ -51,9 +53,9 @@ class TaskDecompositionNode(Node):
             'bidding_evaluation_start_service',
             callback_group=self.callback_group
         )
-        self.black_board_add_service_client = self.create_client(
+        self.broadcaster_add_service_client = self.create_client(
             StringToDict,
-            '/black_board_add_service',
+            '/broadcaster_add_service',
             callback_group=self.callback_group
         )
 
@@ -69,10 +71,10 @@ class TaskDecompositionNode(Node):
         self.wait_for_services([
             self.task_manager_start_service_client,
             self.bidding_evaluation_start_service_client,
-            self.black_board_add_service_client
+            self.broadcaster_add_service_client
         ])
 
-        self.get_logger().info(f'Task Decomposition Node of {namespace} is ready.')
+        self.get_logger().info(f'Task Decomposition Node of {self.my_robot_id} is ready.')
 
     def load_parameters(self, ability):
         ability_slash = ability.replace(' ', '_')
@@ -86,7 +88,7 @@ class TaskDecompositionNode(Node):
         self.knowledge_template = config[ability_slash]['knowledge_template']
         self.get_logger().info(f'Knowledge input list: {self.knowledge_needed_input}')
 
-    def create_data_packet_for_blackboard(self, task_list, robot_id, decompose_task_id):
+    def create_data_packet_for_broadcaster(self, task_list, robot_id, decompose_task_id):
         temp_id_map = {}
         local_dependency_graph = {}
         current_temp_id = 1
@@ -97,6 +99,9 @@ class TaskDecompositionNode(Node):
             current_temp_id += 1
             task['Temp id'] = temp_id
             task['Boss id'] = robot_id
+            task['Worker id'] = None if task['Task type'] != 'My task' else robot_id
+            task['Decomposed from task id'] = decompose_task_id
+            task['Shadow boss'] = []
             temp_id_map[task['Content']] = temp_id
 
         # Generate dependency graph based on task type
@@ -119,7 +124,7 @@ class TaskDecompositionNode(Node):
         }
         return data_packet
     
-    def create_data_packet_for_manager(self, task_list, temp_to_global_id_map, my_ability, decomposed_task_id, decomposed_task_type):
+    def create_data_packet_for_manager(self, task_list, temp_to_global_id_map, my_ability, decomposed_task_id, decomposed_task_type, Father_decomposed_from_task_id, boss_id, Shadow_boss):
             
         for task in task_list:
             temp_id = task.get("Temp id")
@@ -131,7 +136,10 @@ class TaskDecompositionNode(Node):
             'Task list': task_list,
             'My ability': my_ability,
             'Decomposed task id': decomposed_task_id,
-            'Decomposed task type': decomposed_task_type
+            'Decomposed task type': decomposed_task_type,
+            'Father decomposed from task id':Father_decomposed_from_task_id,
+            'Boss id': boss_id,
+            'Shadow boss': Shadow_boss
         }
         return data_packet
 
@@ -166,10 +174,15 @@ class TaskDecompositionNode(Node):
     def task_decomposition_callback(self, request, response):
         self.get_logger().info("Starting task decomposition...")
 
-        if not self.environmental_info_ready:
-            self.get_logger().error('Environmental information not ready.')
-            response.success = False
-            return response
+        # if not self.environmental_info_ready:
+        #     self.get_logger().info('Environmental information not ready.')
+        #     # response.success = False
+        #     # return response
+        
+        while not self.environmental_info_ready:
+            rclpy.spin_once(self, timeout_sec=0.9)  # 确保其他回调函数可以被调用
+            self.get_logger().info('Environmental information not ready.')
+
         
 
         # 从请求中提取信息
@@ -182,6 +195,10 @@ class TaskDecompositionNode(Node):
         from_start_flag = request_dict['From start flag']
         decomposed_task_type = request_dict['Decomposed task type']
         decomposed_task_id = request_dict['Decomposed task id']
+        Father_decomposed_from_task_id = request_dict['Father decomposed from task id']
+        boss_id = request_dict['Boss id']
+        Shadow_boss = request_dict['Shadow boss']
+        
         
         self.load_parameters(my_ability)
         
@@ -193,25 +210,45 @@ class TaskDecompositionNode(Node):
         # rclpy.spin_once(self, timeout_sec=0.1)  # 确保其他回调函数可以被调用
         # Call the task decomposition function
         decomposed_task_list, suggestion_task_list = decompose_task(
+            my_id,
             overall_task_dict,
             my_ability,
             self.environmental_information,
             self.knowledge_needed_input,
-            self.knowledge_of_decomposition,
             self.knowledge_template,
             from_start_flag
         )
 
-        self.get_logger().info(f'Decomposed task list: {decomposed_task_list}')
-        data_packet_for_blackboard = self.create_data_packet_for_blackboard(decomposed_task_list, self.my_robot_id, decomposed_task_id)
-        # Request black_board_add_service
-        black_board_add_req = StringToDict.Request()
-        black_board_add_req.data = json.dumps(data_packet_for_blackboard)
-        black_board_add_resp = self.black_board_add_service_client.call(black_board_add_req)
+        ##Only for listener cop
+        if decomposed_task_type == 'collaborative task':
+            decomposed_task_list = [task for task in decomposed_task_list if task['Task type'] != 'collaborative task']
+        if decomposed_task_type == 'subsequent task':
+            preliminary_task_list = [task for task in decomposed_task_list if task['Task type'] == 'preliminary task']
+            qury_id = Father_decomposed_from_task_id
+            client = self.create_client(StringToString, '/broadcaster_query_service')
+            request = StringToString.Request()
+            request.request_data = qury_id
+            response = client.call(request)
+            if response.response_data == 'Task not found':
+                raise ValueError("An error occurred due to invalid condition")
+            father_task_content = response.response_data
+            for task in preliminary_task_list:
+                if compare_two_text_content(task['Content'], father_task_content):
+                    break
+            else:
+                decomposed_task_list.append({'Task type': 'preliminary task', 'Content': father_task_content, 'Priority': priority +1})
+                
         
-        temp_to_global_id_map = {entry.key: entry.value for entry in black_board_add_resp.dict.entries}
+        self.get_logger().info(f'Decomposed task list: {decomposed_task_list}')
+        data_packet_for_broadcaster = self.create_data_packet_for_broadcaster(decomposed_task_list, self.my_robot_id, decomposed_task_id)
+        # Request broadcaster_add_service
+        broadcaster_add_req = StringToDict.Request()
+        broadcaster_add_req.data = json.dumps(data_packet_for_broadcaster)
+        broadcaster_add_resp = self.broadcaster_add_service_client.call(broadcaster_add_req)
+        
+        temp_to_global_id_map = {entry.key: entry.value for entry in broadcaster_add_resp.dict.entries}
 
-        data_packet_for_manager = self.create_data_packet_for_manager(data_packet_for_blackboard['Task list'], temp_to_global_id_map, my_ability, decomposed_task_id, decomposed_task_type)
+        data_packet_for_manager = self.create_data_packet_for_manager(data_packet_for_broadcaster['Task list'], temp_to_global_id_map, my_ability, decomposed_task_id, decomposed_task_type, Father_decomposed_from_task_id, boss_id, Shadow_boss)
  
         # Request task_manager_start_service
         task_manager_req = StringToBool.Request()
@@ -231,8 +268,7 @@ class TaskDecompositionNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    namespace = 'robot1'  # Example namespace, can be参数化
-    node = TaskDecompositionNode(namespace)
+    node = TaskDecompositionNode()
     executor = MultiThreadedExecutor()
     executor.add_node(node)
 

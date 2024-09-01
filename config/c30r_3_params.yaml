@@ -1,0 +1,129 @@
+Ability_list:
+  - 'Transport items such as soil and water pump'
+
+
+knowledge_of_decomposition : |
+    All tasks to be published should adhere to the following JSON format:
+    '''json
+    {
+    "Task type": string // The type of task to be published. This type should be chosen from one of the following: preliminary task, collaborative task, subsequent task, independent task, or incremental task.
+    "Content": string // The specific content of the task to be published.
+    "Priority": int // if (the type of task to be published is a preliminary task) then [fill in %d], 
+    elseif (the type of task to be published is a collaborative task, independent task, or incremental task) then [fill in %d], 
+    elseif (the type of task to be published is a subsequent task) then [fill in %d].
+    }'''
+    """ % (overall_task_dict["Priority"] + 1, overall_task_dict["Priority"], overall_task_dict["Priority"] - 1)
+
+Transport_items_such_as_soil_and_water_pump:
+  content: 'Transport items such as soil and water pump from one position to another'
+  efficiency: 0.8
+  knowledge_template: |
+    if (there is no passable path from the point {Current location of the robot} to the point {Transport start})
+    then [
+    if ({Ground state} == hard) 
+        then [publish preliminary task:  Clear a passable path from the point {Current location of me} to the point {Transport start}]
+    elseif ({Ground state} == soft) 
+        then [publish preliminary task: Lay down a working path to create a specialized working path from the point {Current location of me} to the point {Transport start}.]
+    ]
+
+    if (there is no passable path from the point {Transport start} to the point {Transport goal})
+    then [
+    if ({Ground state} == hard) 
+        then [publish preliminary task:  Clear a passable path from the point {Transport start} to the point {Transport goal}.]
+    elseif ({Ground state} == soft) 
+        then [publish preliminary task: Lay down a working path to create a specialized working path from the point {Transport start} to the point {Transport goal}.]
+    ]
+    if ({Transport item} a powdered substance, like sand, that can be unloaded by pouring)
+    then [publish collaborative task: Excavate the {transport item} at point {Transport start} and load it onto the transport vehicle. ]
+    else
+      [publish collaborative task: Load the {transport item} at point {Transport start} onto the transport vehicle. 
+        publish collaborative task: Unload the {transport item} from the transport vehicle to the point {Transport goal}.]
+  knowledge_needed_input: |
+    '''json
+    {
+    "Transport start": string // Please fill in the coordinates or representative letter of the starting point of transportation. If neither is explicitly specified, this item should be filled in as unknown.
+    "Transport goal": string // Please fill in the coordinates or representative letter of the goal point of transportation. If neither is explicitly specified, this item should be filled in as unknown.
+    "Current location of me": string // Please fill in the coordinates or representative letter of my current location. If neither is explicitly specified, this item should be filled in as unknown.
+    "Ground state": string // If the ground is soft, fill in soft. If the ground is hard, fill in hard. If neither is explicitly specified, this item should be filled in as unknown.
+    "Transport item": string // Please fill in the name of the item to be transported. If neither is explicitly specified, this item should be filled in as unknown.
+    }'''
+  my_function_description: | 
+    [
+        {{
+            "function_name": "nav_2(robot_id, position)",
+            "function_description": "Move the robot to a destination position.",
+            "input_parameter_description": {{
+                "robot_id": "The id of the robot to be moved.",
+                "position": "The coordinates of the robot's destination, usually in the form of a 2D array like [x, y]."
+            }}
+        }},
+        {{
+            "function_name": "call_cop_func(cop_id, function, input)",
+            "function_description": "Send a function call request to a collaborative robot with id cop_id, where the function name is function, and the input is input.",
+            "input_parameter_description": {{
+                "cop_id": "The id of the collaborative robot receiving the function call request.",
+                "function": "The name of the requested function.",
+                "input": "An array like [a, b] consisting of the inputs required by the requested function."
+            }}
+        }}
+    ]
+  execute_needed_input: |
+    '''{
+      my_id: string; // My robot ID.
+      transport_object: string; // Name of the object to be transported.
+      transport_start_point: array; // Start point coordinates of the transport task, must be a letter point or specific coordinates. If unknown, enter False.
+      transport_end_point: array; // End point coordinates of the transport task, must be a letter point or specific coordinates. If unknown, enter False.
+      cop_1: string; // The robot ID of the collaborator responsible for moving the object to the transport vehicle. If unknown, enter False.
+      object_position: string; // Index key of the object's location information in the environment information dictionary environment_info. Attention: fill in the index rather than the value. If unknown, enter False.
+      my_self_position: string; // My position index key in the environment information dictionary environment_info. Attention: fill in the index rather than the value.  If unknown, enter False.
+    }'''
+
+  execute_input_variable_list: |
+    ['object_position', 'my_self_position']
+
+  execute_process: |
+    """My task execution steps:
+    Step 1: {my_id} moves to {transport_start_point}.
+    Step 2: Let {cop_1} move to {transport_start_point}.
+    Step 3: Let {cop_1} transport {transport_object} from {object_position} to {my_self_position}.
+    Step 4: {my_id} moves to {transport_end_point}."""
+
+  my_function_defination: |
+    def nav_2(self, robot_id, position):
+        topic_name = f'/{robot_id}/goal_pose'
+        publisher = self.create_publisher(PoseStamped, topic_name, 10)
+        goal_pose = PoseStamped()
+        goal_pose.header.frame_id = 'map'
+        goal_pose.header.stamp = self.get_clock().now().to_msg()
+        goal_pose.pose.position.x = position[0]  # 目标位置X坐标
+        goal_pose.pose.position.y = position[1]  # 目标位置Y坐标
+        distance = math.sqrt((goal_pose.pose.position.x - self.current_position[0])**2 + (goal_pose.pose.position.y - self.current_position[1])**2)
+        while distance > 3:
+            rclpy.spin_once(self, timeout_sec=0.1)  # 确保其他回调函数可以被调用
+            distance = math.sqrt((goal_pose.pose.position.x - self.current_position[0])**2 + (goal_pose.pose.position.y - self.current_position[1])**2)
+            publisher.publish(goal_pose)
+            self.get_logger().info(f'Published goal pose to {topic_name}: {goal_pose}')
+            time.sleep(1)
+       
+    def call_cop_func(self, robot_id, function_name, args):
+        client = self.create_client(StringToBool, f'{robot_id}/instruction_listener_service', callback_group=self.callback_group)
+        req = StringToBool.Request()
+        req.data = json.dumps({
+            'function name': function_name,
+            'function input': args
+        })
+        self.get_logger().info(f'Calling function {function_name} on {robot_id} with args {args}')
+        client.call_async(req)
+
+  my_function_name: |
+    ['nav_2', 'call_cop_func']
+    
+
+
+
+
+  
+
+
+
+

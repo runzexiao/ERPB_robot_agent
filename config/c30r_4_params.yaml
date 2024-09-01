@@ -1,0 +1,105 @@
+Ability_list:
+  - 'Build drainage pipe'
+
+knowledge_of_decomposition : |
+    All tasks to be published should adhere to the following JSON format:
+    '''json
+    {
+    "Task type": string // The type of task to be published. This type should be chosen from one of the following: preliminary task, collaborative task, subsequent task, independent task, or incremental task.
+    "Content": string // The specific content of the task to be published. Please use the original text of the task content.
+    "Priority": int // if (the type of task to be published is a preliminary task) then [fill in %d], 
+    elseif (the type of task to be published is a collaborative task, independent task, or incremental task) then [fill in %d], 
+    elseif (the type of task to be published is a subsequent task) then [fill in %d].
+    }'''
+    """ % (overall_task_dict["Priority"] + 1, overall_task_dict["Priority"], overall_task_dict["Priority"] - 1)
+
+Build_drainage_pipe:
+  content: 'Build drainage pipe'
+  efficiency: 0.4
+  knowledge_template: |
+    There is no need for {my_id} to publish any task here.
+  knowledge_needed_input: |
+    '''json
+    {
+      my_id: string; // My robot ID.
+    }'''
+  my_function_description: | 
+    [
+        {{
+            "function_name": "nav_2(robot_id, position)",
+            "function_description": "Move the robot to a destination position.",
+            "input_parameter_description": {{
+                "robot_id": "The id of the robot to be moved.",
+                "position": "The coordinates of the robot's destination, usually in the form of a 2D array like [x, y]."
+            }}
+        }},
+        {{
+            "function_name": "call_cop_func(cop_id, function, input)",
+            "function_description": "Send a function call request to a collaborative robot with id cop_id, where the function name is function, and the input is input.",
+            "input_parameter_description": {{
+                "cop_id": "The id of the collaborative robot receiving the function call request.",
+                "function": "The name of the requested function.",
+                "input": "An array like [a, b] consisting of the inputs required by the requested function."
+            }}
+        }},
+        {{
+            "function_name": "lay_pipe()",
+            "function_description": "lay the pipe to the ground",
+            "input_parameter_description": {{"None"
+            }}
+        }}
+    ]
+  execute_needed_input: |
+    '''{
+      my_id: string; // My robot ID.
+      planned starting point for the pipe: string; // Please fill in the coordinates or representative letter of planned starting point for the pipe. If neither is explicitly specified, this item should be filled in as unknown.
+      planned endpoint for the pipe: string; // Please fill in the coordinates or representative letter of the planned endpoint for the pipe. If neither is explicitly specified, this item should be filled in as unknown.
+    }'''
+
+  execute_input_variable_list: |
+    []
+
+  execute_process: |
+    """My task execution steps:
+    Step 1: {my_id} moves to {planned starting point for the pipe}.
+    Step 2: {my_id} moves to {planned endpoint for the pipe}.
+    Step 3: {my_id} lays the pipe to the ground.
+    """
+
+  my_function_defination: |
+    def nav_2(self, robot_id, position):
+        topic_name = f'/{robot_id}/goal_pose'
+        publisher = self.create_publisher(PoseStamped, topic_name, 10)
+        goal_pose = PoseStamped()
+        goal_pose.header.frame_id = 'map'
+        goal_pose.header.stamp = self.get_clock().now().to_msg()
+        goal_pose.pose.position.x = position[0]  # 目标位置X坐标
+        goal_pose.pose.position.y = position[1]  # 目标位置Y坐标
+        distance = math.sqrt((goal_pose.pose.position.x - self.current_position[0])**2 + (goal_pose.pose.position.y - self.current_position[1])**2)
+        while distance > 3:
+            rclpy.spin_once(self, timeout_sec=0.1)  # 确保其他回调函数可以被调用
+            distance = math.sqrt((goal_pose.pose.position.x - self.current_position[0])**2 + (goal_pose.pose.position.y - self.current_position[1])**2)
+            publisher.publish(goal_pose)
+            self.get_logger().info(f'Published goal pose to {topic_name}: {goal_pose}')
+            time.sleep(1)
+       
+    def call_cop_func(self, robot_id, function_name, args):
+        client = self.create_client(StringToBool, f'{robot_id}/instruction_listener_service', callback_group=self.callback_group)
+        req = StringToBool.Request()
+        req.data = json.dumps({
+            'function name': function_name,
+            'function input': args
+        })
+        self.get_logger().info(f'Calling function {function_name} on {robot_id} with args {args}')
+        client.call_async(req)
+
+    def lay_pipe(self):
+        pass
+
+
+  my_function_name: |
+    ['nav_2', 'call_cop_func', 'lay_pipe']
+
+
+
+

@@ -15,9 +15,9 @@ from copy import deepcopy
 from bidding_evaluation_LLM_function import select_robot_for_task
 
 class BiddingEvaluationNode(Node):
-    def __init__(self, namespace):
-        super().__init__('bidding_evaluation_node', namespace=namespace)
-        self.namespace = namespace
+    def __init__(self):
+        super().__init__('bidding_evaluation_node')
+        self.namespace = self.get_namespace().lstrip('/')
         self.task_dict = {}
         self.callback_group = ReentrantCallbackGroup()
         self.timer = None
@@ -40,8 +40,8 @@ class BiddingEvaluationNode(Node):
             self.create_bidding_update_services(self.task_dict)
             self.get_logger().info('Bidding Evaluation Node started.')
 
-            # 启动定时器，等待30秒
-            self.timer = self.create_timer(30.0, self.process_tasks_after_wait)
+            # 启动定时器，等待10秒
+            self.timer = self.create_timer(10.0, self.process_tasks_after_wait)
 
             response.success = True
         except Exception as e:
@@ -124,7 +124,7 @@ class BiddingEvaluationNode(Node):
                 self.task_dict[task_id]['bidding'] = updated_list
         
         if not all(results.values()):
-            self.timer = self.create_timer(30.0, self.process_tasks_after_wait)
+            self.timer = self.create_timer(10.0, self.process_tasks_after_wait)
         else:
             rclpy.spin_once(self, timeout_sec=0.1)
             self.cleanup_remaining_biddings()
@@ -153,7 +153,7 @@ class BiddingEvaluationNode(Node):
             self.bidding_result_input_service_client.call_async(req)
 
     def reject_task(self, task_id, bidding_list):
-        self.get_logger().warn(f'Task {task_id} has no suitable bidding, retrying in 30 seconds...')
+        self.get_logger().warn(f'Task {task_id} has no suitable bidding, retrying in 10 seconds...')
         robot_ids = [robot['Robot id'] for robot in bidding_list]
         for robot_id in robot_ids:
             self.bidding_result_input_service_client = self.create_client(
@@ -184,8 +184,7 @@ class BiddingEvaluationNode(Node):
 
 def main(args=None):
     rclpy.init(args=args)
-    namespace = 'robot1'  # 示例命名空间，可以参数化
-    node = BiddingEvaluationNode(namespace)
+    node = BiddingEvaluationNode()
     executor = MultiThreadedExecutor()
     executor.add_node(node)
 

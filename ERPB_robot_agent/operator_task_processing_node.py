@@ -12,14 +12,15 @@ from ament_index_python.packages import get_package_share_directory
 from my_interfaces.msg import Dictionaries, Dictionary, KeyValue
 import yaml
 import os
+import json
 
 class OperatorTaskProcessingNode(Node):
-    def __init__(self, namespace):
-        super().__init__('operator_task_processing_node', namespace=namespace)
+    def __init__(self):
+        super().__init__('operator_task_processing_node')
         # Parameters
         self.pkg_name = "ERPB_robot_agent"
-        self.params_file_name = "kcafe1_params.yaml"
-        self.my_robot_id = namespace
+        self.my_robot_id = self.get_namespace().lstrip('/')
+        self.params_file_name = self.my_robot_id  + "_params.yaml"
 
         # Load abilities
         self.load_abilities()
@@ -33,12 +34,12 @@ class OperatorTaskProcessingNode(Node):
 
         # Definition of Service Client
         self.task_decomposition_service_client = self.create_client(
-            DictToBool,
+            StringToBool,
             'task_decomposition_service'
         )
 
         self.wait_for_services([self.task_decomposition_service_client])
-        self.get_logger().info(f'Operator Task Processing Node of {namespace} is ready.')
+        self.get_logger().info(f'Operator Task Processing Node of {self.my_robot_id} is ready.')
 
     def load_abilities(self):
         # 获取功能包的共享目录路径
@@ -86,32 +87,43 @@ class OperatorTaskProcessingNode(Node):
         if CAT_result_parser:
             # Create the packet for task decomposition service when task is doable
             decompose_packet = {
-                'Boss id': 0,
+                'My id': self.my_robot_id,  
                 'Task content': operator_task,
+                'Priority': 1,
                 'My ability': CAT_result_parser,
-                'From strat flag': True,
-                'Decomposed task type': 'None'
+                'From start flag': True,
+                'Decomposed task type':'None',
+                'Decomposed task id': '0',
+                'Father decomposed from task id':'0',
+                'Boss id': '0',
+                'Shadow boss' : []
             }
         else:
             # Create the packet for task decomposition service when task is not doable
             decompose_packet = {
-                'Boss id': 0,
+                'My id': self.my_robot_id,  
                 'Task content': operator_task,
+                'Priority': 1,
                 'My ability': 'None',
-                'From strat flag': False,
-                'Decomposed task type': 'None'
+                'From start flag': False,
+                'Decomposed task type':'None',
+                'Decomposed task id': '0',
+                'Father decomposed from task id':'0',
+                'Boss id': '0',
+                'Shadow boss' : []
             }
+            
 
-        req = DictToBool.Request()
-        req.data = self.dictionary_request_fill_in(decompose_packet)
+
+        req = StringToBool.Request()
+        req.data = json.dumps(decompose_packet)
         self.task_decomposition_service_client.call_async(req)
         response.success = True
         return response
 
 def main(args=None):
     rclpy.init(args=args)
-    namespace = 'robot1'  # Example namespace, can be parameterized
-    node = OperatorTaskProcessingNode(namespace)
+    node = OperatorTaskProcessingNode()
 
     try:
         rclpy.spin(node)

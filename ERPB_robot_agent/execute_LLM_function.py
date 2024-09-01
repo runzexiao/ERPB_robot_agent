@@ -18,7 +18,7 @@ api_key = os.getenv('OPENAI_API_KEY')
 # 初始化 ChatOpenAI
 llm = ChatOpenAI(temperature=0.0, openai_api_key=api_key, model_name='gpt-4o')
 
-def generate_function_trans_result(Task_description, My_robot_id, collaborative_robots_basic_info, environment_info, Dictionary_T_list, variable_list, T):
+def generate_function_trans_result(Task_description, My_robot_id, collaborative_robots_basic_info, environment_info, Dictionary_T_list, variable_list, execute_process, my_function_description, cops_function_description):
     input_list_schema = ResponseSchema(name="dictionary T",
                                  description="Fill in the completed dictionary T.")
 
@@ -53,8 +53,11 @@ def generate_function_trans_result(Task_description, My_robot_id, collaborative_
     
     input_list = EFI_output_parser.parse(EFI_result)['dictionary T']
 
-    input_list["object_position"] = f"environment_info['{input_list['object_position']}']"
-    input_list["my_self_position"] =f"environment_info['{input_list['my_self_position']}']"
+    for var in variable_list:
+        input_list[var] = f"environment_info['{input_list[var]}']"
+
+    # input_list["object_position"] = f"environment_info['{input_list['object_position']}']"
+    # input_list["my_self_position"] =f"environment_info['{input_list['my_self_position']}']"
 
     A = input_list
 
@@ -64,6 +67,20 @@ def generate_function_trans_result(Task_description, My_robot_id, collaborative_
     FTR_response_schemas = [function_trans_schema]
     FTR_output_parser = StructuredOutputParser.from_response_schemas(FTR_response_schemas)
     FTR_format_instructions = FTR_output_parser.get_format_instructions()
+
+    T = """My task execution steps:
+
+    %s
+
+    Basic Functions of mine:
+    %s
+
+    Basic Functions of collaborative robots:
+    %s
+
+    From the perspective of {my_id}, please write out the task execution steps from the above content in the form of functions. It is required to use only the functions of mine ({my_id}), and you can use the call_cop_func function to call functions of other robots. Provide a list of function names with filled-in input content only, without defining any functions.
+    Please note that if the input is in the form of dictionary indices, please maintain that format.
+    """ % (execute_process, my_function_description, cops_function_description)
 
     method_for_now = T.format(**A)
 
@@ -89,7 +106,7 @@ def generate_function_trans_result(Task_description, My_robot_id, collaborative_
     return function_trans_result
 
 if __name__ == "__main__":
-    Task_description = 'Transport the pump from [2,2] to [10,10]'
+    Task_description = 'Transport the water pump from point [2,2] to the point [10, 10].'
     My_robot_id = 'robot1'
     collaborative_robots_basic_info =[{'robot id': 'robot2', 'task id': 'task2', 'task description': 'Move the pump from its location to the transport vehicle'}]
     environment_info = {
@@ -113,18 +130,22 @@ if __name__ == "__main__":
       my_self_position: string; // My position index key in the environment information dictionary environment_info. Attention: fill in the index rather than the value.  If unknown, enter False.
     }'''
     variable_list = ['object_position', 'my_self_position']
-    T="""My task execution steps:
-    Step 1: {my_id} moves to {transport_start_point}".
+    
+
+    execute_process = """My task execution steps:
+    Step 1: {my_id} moves to {transport_start_point}.
     Step 2: Let {cop_1} move to {transport_start_point}.
     Step 3: Let {cop_1} transport {transport_object} from {object_position} to {my_self_position}.
-    Step 4: {my_id} moves to {transport_end_point}.
-
-    Basic Functions of {my_id}:
+    Step 4: {my_id} moves to {transport_end_point}."""
+    
+    
+    my_function_description = """
     [
         {{
-            "function_name": "nav_2(position)",
+            "function_name": "nav_2(robot_id, position)",
             "function_description": "Move the robot to a destination position.",
             "input_parameter_description": {{
+                "robot_id": "The id of the robot to be moved.",
                 "position": "The coordinates of the robot's destination, usually in the form of a 2D array like [x, y]."
             }}
         }},
@@ -137,25 +158,21 @@ if __name__ == "__main__":
                 "input": "An array like [a, b] consisting of the inputs required by the requested function."
             }}
         }}
-    ]
+    ] """
 
-    Basic Functions of {cop_1}:
-
-    [
-        {{
-            "function_name": "lift_and_drop(obj, pos_a, pos_b)",
-            "function_description": "Lift the object obj from its position a, move it to position b, and drop it.",
-            "input_parameter_description": {{
-                "obj": "The object being lifted and moved.",
-                "pos_a": "The current position of the object.",
-                "pos_b": "The position to which the object needs to be moved."
+    cops_function_description ="""
+    [{{"robot id": robot2, "function_description":[   {{
+                "function_name": "lift_and_drop(robot_id,obj, pos_a, pos_b)",
+                "function_description": "Lift the object obj from its position a, move it to position b, and drop it.",
+                "input_parameter_description": {{
+                    "robot_id": "The id of the robot performing the operation.",
+                    "obj": "The object being lifted and moved.",
+                    "pos_a": "The current position of the object.",
+                    "pos_b": "The position to which the object needs to be moved."
+                }}
             }}
-        }}
-    ]
-
-    From the perspective of {my_id}, please write out the task execution steps from the above content in the form of functions. It is required to use only the functions of {my_id}, and you can use the call_cop_func function to call functions of other robots. Provide a list of function names with filled-in input content only, without defining any functions.
-    Please note that if the input is in the form of dictionary indices, please maintain that format.
-    """
-
-    function_trans_result = generate_function_trans_result(Task_description, My_robot_id, collaborative_robots_basic_info, environment_info, Dictionary_T_list, variable_list, T)
+        ]}}]
+        
+        """
+    function_trans_result = generate_function_trans_result(Task_description, My_robot_id, collaborative_robots_basic_info, environment_info, Dictionary_T_list, variable_list, execute_process, my_function_description, cops_function_description)
     print(function_trans_result)
