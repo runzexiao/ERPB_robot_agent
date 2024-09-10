@@ -5,7 +5,7 @@ from rclpy.node import Node
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.executors import MultiThreadedExecutor
 from std_msgs.msg import String
-from my_interfaces.srv import StringToBool
+from my_interfaces.srv import StringToBool, StringToString
 from std_srvs.srv import Trigger
 import json
 
@@ -58,6 +58,12 @@ class TaskManagerNode(Node):
             self.cop_basic_info_add_callback,
             callback_group=self.callback_group
         )
+        self.manager_query_service = self.create_service(
+            StringToString,
+            'manager_query_service',
+            self.manager_query_service_callback,
+            callback_group=self.callback_group
+        )
 
         self.get_logger().info(f'Task Manager Node of {self.my_robot_id} is ready.')
 
@@ -66,6 +72,17 @@ class TaskManagerNode(Node):
         self.get_logger().info(f'Execution unlocked')
         response.success = True
         response.message = 'Execution unlocked'
+        return response
+    
+    def manager_query_service_callback(self, request, response):
+        request_dict = json.loads(request.request_data)
+        Decom_id = request_dict['Decomposed task id']
+        qkey = request_dict['qkey'] # 'Task Type'
+        qkeyvalue = request_dict['qkeyvalue'] # 'My task'
+        akey = request_dict['akey'] # 'Content'
+
+        my_task_content = next((task[akey] for task in self.task_management[Decom_id] if task[qkey] == qkeyvalue), None)
+        response.response_data = my_task_content
         return response
 
     def task_manager_start_callback(self, request, response):
@@ -238,14 +255,14 @@ class TaskManagerNode(Node):
                         'key': 'Task status',
                         'keyvalue': 'Doing'
                     })
-                    self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "doing"')
+                    self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "Doing"')
                     client.call_async(req)
 
                     shadow_list = self.shadow_boss_list[decomposed_task_id]
                     if shadow_list:
                         for shadow in shadow_list:
                             shadow_boss_id = shadow['Shadow boss id']
-                            shadow_decomposed_id = shadow['Shadow decomposed task id']
+                            shadow_decomposed_id = shadow['Shadow decomposed id']
                             shadow_task_id = shadow['Shadow task id']
                             client1 = self.create_client(StringToBool, f'/{shadow_boss_id}/managed_task_info_update', callback_group=self.callback_group)
                             req1 = StringToBool.Request()
@@ -255,7 +272,7 @@ class TaskManagerNode(Node):
                                 'key': 'Task status',
                                 'keyvalue': 'Doing'
                             })
-                            self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "doing"')
+                            self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "Doing"')
                             client1.call_async(req1)
 
                     self.status_sent[decomposed_task_id][current_status] = True
@@ -272,14 +289,14 @@ class TaskManagerNode(Node):
                         'key': 'Task status',
                         'keyvalue': 'Done'
                     })
-                    self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "done"')
+                    self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "Done"')
                     client.call_async(req)
                     
                     shadow_list = self.shadow_boss_list[decomposed_task_id]
                     if shadow_list:
                         for shadow in shadow_list:
                             shadow_boss_id = shadow['Shadow boss id']
-                            shadow_decomposed_id = shadow['Shadow decomposed task id']
+                            shadow_decomposed_id = shadow['Shadow decomposed id']
                             shadow_task_id = shadow['Shadow task id']
                             client1 = self.create_client(StringToBool, f'/{shadow_boss_id}/managed_task_info_update', callback_group=self.callback_group)
                             req1 = StringToBool.Request()
@@ -289,7 +306,7 @@ class TaskManagerNode(Node):
                                 'key': 'Task status',
                                 'keyvalue': 'Done'
                             })
-                            self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "doing"')
+                            self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "Doing"')
                             client1.call_async(req1)
 
 
@@ -314,7 +331,7 @@ class TaskManagerNode(Node):
                     if shadow_list:
                         for shadow in shadow_list:
                             shadow_boss_id = shadow['Shadow boss id']
-                            shadow_decomposed_id = shadow['Shadow decomposed task id']
+                            shadow_decomposed_id = shadow['Shadow decomposed id']
                             shadow_task_id = shadow['Shadow task id']
                             client1 = self.create_client(StringToBool, f'/{shadow_boss_id}/managed_task_info_update', callback_group=self.callback_group)
                             req1 = StringToBool.Request()
@@ -324,7 +341,7 @@ class TaskManagerNode(Node):
                                 'key': 'Task status',
                                 'keyvalue': 'prepared'
                             })
-                            self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "doing"')
+                            self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "Doing"')
                             client1.call_async(req1)
 
                     self.status_sent[decomposed_task_id][current_status] = True

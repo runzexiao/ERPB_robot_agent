@@ -22,6 +22,7 @@ class TaskBroadcasterNode(Node):
         self.current_task_id = 1  # 初始化任务ID生成器
         self.temp_to_global_id_map = {}
         self.add_flag = False
+        self.compare_res = False
 
         # 发布者
         self.task_publisher = self.create_publisher(String, '/broadcaster_published', 10)
@@ -29,7 +30,7 @@ class TaskBroadcasterNode(Node):
 
         # 服务
         self.add_service = self.create_service(
-            StringToDict,
+            StringToString,
             '/broadcaster_add_service',
             self.broadcaster_add_service_callback,
             callback_group=self.callback_group
@@ -62,6 +63,11 @@ class TaskBroadcasterNode(Node):
     # 检查图是否为空
     def is_graph_empty(self, graph):
         return graph.number_of_nodes() == 0 and graph.number_of_edges() == 0
+    
+    def compare_two_content(self, content1, content2):
+        result = compare_two_text_content(content1, content2)
+        self.compare_res = result
+        return result
 
     def process_data_packet(self, data_packet):
         decomposed_task_id = data_packet.get('Decomposed from task id')
@@ -76,9 +82,10 @@ class TaskBroadcasterNode(Node):
 
         # 处理任务并分配新的任务ID
         self.temp_to_global_id_map = {}  # 映射局部临时ID到全局新ID
+        self.exsiting_task_list = []
         for new_task in local_task_list:
             # 查找是否已有相同内容的任务
-            existing_task = next((task for task in self.global_task_list if task['Task id'] != decomposed_task_id and compare_two_text_content(task['Content'], new_task['Content'])), None)
+            existing_task = next((task for task in self.global_task_list if task['Task id'] != decomposed_task_id and self.compare_two_content(task['Content'], new_task['Content'])), None)
             if existing_task:
                 task_id = existing_task['Task id']
                 priority_diff = abs(existing_task['Priority'] - new_task['Priority'])
@@ -87,22 +94,24 @@ class TaskBroadcasterNode(Node):
                 else:
                     self.update_priority(existing_task['Task id'], priority_diff)
                 existing_task['Priority'] = max(existing_task['Priority'], new_task['Priority'])
+                existing_task['Content'] = self.compare_res
                 if existing_task['Task status'] != 'Published':
                     shadow_data = {"Shadow boss id": new_task['Boss id'], "Shadow decomposed id": new_task['Decomposed from task id'], "Shadow task id": task_id}
                     e_worker_id = existing_task['Worker id']
-                    
-
+                
                     client = self.create_client(StringToBool, f'{e_worker_id}/manager_shadow_boss_append', callback_group=self.callback_group)
                     req = StringToBool.Request()
                     req.data = json.dumps({
-                            'Decomposed task id': task_id,
+                            'Decomposed task id': existing_task['Decomposed from task id'],
                             'Shadow boss': shadow_data
                             })
-                    self.get_logger().info(f'Append shadow boss {shadow_data} to worker {e_worker_id}')
+                    self.get_logger().info(f'Append shadow boss {shadow_data} to worker {e_worker_id}, with Decomposed task id {task_id}')
                     client.call_async(req)
                 else:
                     shadow_data = {"Shadow boss id": new_task['Boss id'], "Shadow decomposed id": new_task['Decomposed from task id'], "Shadow task id": task_id}
                     existing_task['Shadow boss'].append(shadow_data)
+                
+                self.exsiting_task_list.append(task_id)
                 
             else:
                 task_id = self.generate_new_task_id()  # 分配新的任务ID
@@ -159,7 +168,8 @@ class TaskBroadcasterNode(Node):
 
         # 更新全局发布中的任务列表
         self.global_published_task_list = [task for task in self.global_task_list if task['Task status'] == 'Published']
-        return self.temp_to_global_id_map
+        broadcast_answer = {'exsiting task list': self.exsiting_task_list, 'temp to global map': self.temp_to_global_id_map}
+        return broadcast_answer  
 
     def update_priority(self, task_id, priority_diff, dependency_graph=None):
         graph = self.global_dependency_graph if dependency_graph is None else nx.DiGraph(dependency_graph)  # 选择要更新的图
@@ -231,20 +241,21 @@ class TaskBroadcasterNode(Node):
         return dict_msg
     def broadcaster_add_service_callback(self, request, response):
         try:
-            data_packet = json.loads(request.data)
-            temp_to_global_map = self.process_data_packet(data_packet)
-            dict_msg = self.dictionary_request_fill_in(temp_to_global_map)
-            response.dict = dict_msg
+            data_packet = json.loads(request.request_data)
+            # broadcast_answer = {'exsiting task list': [], 'temp to global map':{}}
+            broadcast_answer = self.process_data_packet(data_packet)
+            msg_data = json.dumps(broadcast_answer)
+            response.response_data = msg_data
             self.get_logger().info(f'Task is added')
             self.get_logger().info("Merged and Sorted Task List:")
             # print(1234455)
             for task in self.get_sorted_task_list():
                 self.get_logger().info(json.dumps(task))
 
-            # 打印发布中的任务列表
-            self.get_logger().info("\nPublished Task List:")
-            for task in self.get_published_task_list():
-                print(task)
+            # # 打印发布中的任务列表
+            # self.get_logger().info("\nPublished Task List:")
+            # for task in self.get_published_task_list():
+            #     print(task)
 
             # 打印合并后的依赖关系图
             self.get_logger().info("\nMerged Dependency Graph:")
@@ -252,7 +263,7 @@ class TaskBroadcasterNode(Node):
             self.add_flag = True
         except Exception as e:
             self.get_logger().error(f'Error in broadcaster_add_service_callback: {e}')
-            response.dict = Dictionary()
+            response.response_data = String()
         return response
 
     def broadcaster_task_info_update_callback(self, request, response):

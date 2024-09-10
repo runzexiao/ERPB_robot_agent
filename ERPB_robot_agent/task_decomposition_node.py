@@ -54,7 +54,7 @@ class TaskDecompositionNode(Node):
             callback_group=self.callback_group
         )
         self.broadcaster_add_service_client = self.create_client(
-            StringToDict,
+            StringToString,
             '/broadcaster_add_service',
             callback_group=self.callback_group
         )
@@ -170,6 +170,9 @@ class TaskDecompositionNode(Node):
         self.environmental_information = json.loads(msg.data)
         self.environmental_info_ready = True
         #self.get_logger().info(f'Updated environmental information: {self.environmental_information}')
+    
+    def starts_with_prefix(self, main_string, prefix):
+        return main_string.startswith(prefix)
 
     def task_decomposition_callback(self, request, response):
         try:
@@ -200,8 +203,11 @@ class TaskDecompositionNode(Node):
             boss_id = request_dict['Boss id']
             Shadow_boss = request_dict['Shadow boss']
             
-            
-            self.load_parameters(my_ability)
+            if my_ability != 'None':
+                self.load_parameters(my_ability)
+            else:
+                self.knowledge_needed_input = 'Nothing'
+                self.knowledge_template = 'Nothing'
             
 
             self.get_logger().info(f'Task content: {task_content}')
@@ -224,30 +230,38 @@ class TaskDecompositionNode(Node):
             if decomposed_task_type == 'collaborative task':
                 decomposed_task_list = [task for task in decomposed_task_list if task['Task type'] != 'collaborative task']
             if decomposed_task_type == 'subsequent task':
+                self.get_logger().info('Fall in subsequent task branch')
                 preliminary_task_list = [task for task in decomposed_task_list if task['Task type'] == 'preliminary task']
                 qury_id = Father_decomposed_from_task_id
-                client = self.create_client(StringToString, '/broadcaster_query_service')
-                request = StringToString.Request()
-                request.request_data = qury_id
-                response = client.call(request)
-                if response.response_data == 'Task not found':
-                    raise ValueError("An error occurred due to invalid condition")
-                father_task_content = response.response_data
+                self.get_logger().info(f'qury_id: {qury_id}')
+                gg_client = self.create_client(StringToString, f'/{boss_id}/manager_query_service')
+                req={'Decomposed task id': qury_id, 'qkey': 'Task type', 'qkeyvalue': 'My task', 'akey': 'Content'}
+                gg_request = StringToString.Request()
+                gg_request.request_data = json.dumps(req)
+                self.get_logger().info(f' request.request_data: {gg_request.request_data}')
+                gg_response = gg_client.call(gg_request)
+                father_task_content = gg_response.response_data
+                gg_client.destroy()
                 for task in preliminary_task_list:
                     if compare_two_text_content(task['Content'], father_task_content):
+                        self.get_logger().info(f'Found the same task: {task}')
                         break
                 else:
+                    self.get_logger().info(f'No same task found, add father task {father_task_content} to decomposed task list')
                     decomposed_task_list.append({'Task type': 'preliminary task', 'Content': father_task_content, 'Priority': priority +1})
                     
             
             self.get_logger().info(f'Decomposed task list: {decomposed_task_list}')
             data_packet_for_broadcaster = self.create_data_packet_for_broadcaster(decomposed_task_list, self.my_robot_id, decomposed_task_id)
             # Request broadcaster_add_service
-            broadcaster_add_req = StringToDict.Request()
-            broadcaster_add_req.data = json.dumps(data_packet_for_broadcaster)
-            broadcaster_add_resp = self.broadcaster_add_service_client.call(broadcaster_add_req)
+            broadcaster_add_req = StringToString.Request()
+            broadcaster_add_req.request_data = json.dumps(data_packet_for_broadcaster)
+            broadcast_answer_unloaded = self.broadcaster_add_service_client.call(broadcaster_add_req)
+            broadcast_answer = json.loads(broadcast_answer_unloaded.response_data)
+            # broadcast_answer = {'exsiting task list': [], 'temp to global map':{}}
             
-            temp_to_global_id_map = {entry.key: entry.value for entry in broadcaster_add_resp.dict.entries}
+            temp_to_global_id_map = broadcast_answer['temp to global map']
+            exsiting_task_list = broadcast_answer['exsiting task list']
 
             data_packet_for_manager = self.create_data_packet_for_manager(data_packet_for_broadcaster['Task list'], temp_to_global_id_map, my_ability, decomposed_task_id, decomposed_task_type, Father_decomposed_from_task_id, boss_id, Shadow_boss)
     
@@ -259,7 +273,7 @@ class TaskDecompositionNode(Node):
 
             # Request bidding_evaluation_start_service
             bidding_evaluation_req = StringToBool.Request()
-            bidding_evaluation_req.data = json.dumps({'Task list': data_packet_for_manager['Task list'], 'decomposed task id': decomposed_task_id})
+            bidding_evaluation_req.data = json.dumps({'Task list': [task for task in data_packet_for_manager['Task list'] if task['Task id'] not in exsiting_task_list], 'decomposed task id': decomposed_task_id})
             self.get_logger().info(f'bidding_evaluation_req:{bidding_evaluation_req.data}')
             self.bidding_evaluation_start_service_client.call_async(bidding_evaluation_req)
             response.success = True

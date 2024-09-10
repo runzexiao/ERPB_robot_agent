@@ -14,13 +14,13 @@ class EnvInfoPublisher(Node):
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
         # 初始化机器人的位置信息字典
-        self.robot_positions = {'c30r_0':[0, 0], 'c30r_1':[0, 0], 'c30r_2':[0, 0], 'c30r_3':[0, 0], 'c30r_4':[0, 0], 'c30r_5':[0, 0]}
+        self.robot_positions = {'c30r_0':[0, 0], 'c30r_1':[0, 0], 'c30r_2':[0, 0], 'zx120_0':[0, 0], 'zx120_1':[0, 0], 'zx120_2':[0, 0]}
         # 初始化环境信息
         self.env_info = {
             "pipe_information": {
                 "pipe_status": "folded",
-                "pipe_start_location": [0, 0],
-                "pipe_end_location": [0, 0]
+                "pipe_current_location_side1": [0, 0],
+                "pipe_current_location_side2": [0, 0]
             },
             "robot_location": self.robot_positions,
             "water_pump_location": [0, 0],
@@ -30,12 +30,20 @@ class EnvInfoPublisher(Node):
 
         # 订阅每个机器人的位置话题
         self.subscribers = []
-        for i in range(0, 6):  # 6个机器人
+        for i in range(0, 3):  # 3个机器人
             topic_name = f'/c30r_{i}/base_link/pose'
             subscriber = self.create_subscription(
                 PoseStamped,
                 topic_name,
                 self.create_listener_callback(f'c30r_{i}'),
+                10)
+            self.subscribers.append(subscriber)
+        for i in range(0, 3):  # 3个机器人
+            topic_name = f'/zx120_{i}/base_link/pose'
+            subscriber = self.create_subscription(
+                PoseStamped,
+                topic_name,
+                self.create_listener_callback(f'zx120_{i}'),
                 10)
             self.subscribers.append(subscriber)
         

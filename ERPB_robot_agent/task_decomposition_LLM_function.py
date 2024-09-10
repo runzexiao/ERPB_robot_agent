@@ -229,97 +229,97 @@ def decompose_task(
             Decomposed_Task_list.extend(ensure_list(KTP_result_parser["Published task list based on knowledge"]))
 
         print("Knowledge based task publishing complete.")
-    else:
-        print("Starting task decomposition from Unresolved Remaining Task Handling Module...")
-        D_result_parser = {'Remaining task': Overall_Task}
-        KTP_result_parser = {"Published task list based on knowledge": []}
+    
 
-    # Unresolved Remaining Task Handling
-    print("Handling unresolved remaining tasks...")
-    Remaining_task = D_result_parser['Remaining task']
+        # Unresolved Remaining Task Handling
+        print("Handling unresolved remaining tasks...")
+        Remaining_task = D_result_parser['Remaining task']
 
-    if Remaining_task != False:
-        PIT_schema = ResponseSchema(name="Still remained tasks",
-                                    description=" Fill in the list of tasks to be output. If there is no task that needs to be output, output an empty list.")
+        if Remaining_task != False:
+            PIT_schema = ResponseSchema(name="Still remained tasks",
+                                        description=" Fill in the list of tasks to be output. If there is no task that needs to be output, output an empty list.")
 
-        URTH_response_schemas = [PIT_schema]
-        URTH_output_parser = StructuredOutputParser.from_response_schemas(URTH_response_schemas)
-        URTH_format_instructions = URTH_output_parser.get_format_instructions()
-        Already_published_task_list = [task["Content"] for task in Decomposed_Task_list]
-        print("Already published task list:", Already_published_task_list)
-        remained_task_finder_method = """
-        Instruction: Check the overall task information enclosed in double quotes and the already published task information enclosed in single quotes. Based on the following conditions, publish the corresponding tasks. If the conditions are insufficient, please return that the conditions are insufficient. Only tell me the published results.
+            URTH_response_schemas = [PIT_schema]
+            URTH_output_parser = StructuredOutputParser.from_response_schemas(URTH_response_schemas)
+            URTH_format_instructions = URTH_output_parser.get_format_instructions()
+            Already_published_task_list = [task["Content"] for task in Decomposed_Task_list]
+            print("Already published task list:", Already_published_task_list)
+            remained_task_finder_method = """
+            Instruction: Check the overall task information enclosed in double quotes and the already published task information enclosed in single quotes. Based on the following conditions, publish the corresponding tasks. If the conditions are insufficient, please return that the conditions are insufficient. Only tell me the published results.
 
-        "Overall task: {Remaining_task}"
-        'Already published task list: {Already_published_task_list}'
+            "Overall task: {Remaining_task}"
+            'Already published task list: {Already_published_task_list}'
 
-        if (completing all the literal tasks in the Already published task list means the Overall task is completed)
-        then [there is no need to output any task here.]
-        else [output the tasks in the Overall task that remain incomplete even after finishing all the literal tasks in the Already published task list.]
+            if (completing all the literal tasks in the Already published task list means the Overall task is completed)
+            then [there is no need to output any task here.]
+            else [output the tasks in the Overall task that remain incomplete even after finishing all the literal tasks in the Already published task list.]
 
-        {URTH_format_instructions}
-        """
-
-        remained_task_finder_prompt_template = ChatPromptTemplate.from_template(remained_task_finder_method)
-
-        chain_remained_task_finder = LLMChain(llm=llm, prompt=remained_task_finder_prompt_template)
-
-        URTH_result = chain_remained_task_finder.run({
-            "my_id": my_id,
-            "Remaining_task": Remaining_task,
-            "Already_published_task_list": Already_published_task_list,
-            "URTH_format_instructions": URTH_format_instructions
-        })
-
-        URTH_result_parser = URTH_output_parser.parse(URTH_result)
-        print("Unresolved remaining task handling result:", URTH_result_parser)
-
-        if URTH_result_parser["Still remained tasks"]:
-            still_remained = URTH_result_parser["Still remained tasks"]
-            PITT_schema = ResponseSchema(name="Published tasks",
-                                    description="Fill in here with a list of all the JSON dictionaries of tasks to be published. If there is nothing to publish, fill in an empty list.")
-
-            URTHT_response_schemas = [PITT_schema]
-            URTHT_output_parser = StructuredOutputParser.from_response_schemas(URTHT_response_schemas)
-            URTHT_format_instructions = URTHT_output_parser.get_format_instructions()
-            
-            independent_task_finder_method = """
-            I am {my_id}. 
-            Instruction: Check the overall task information enclosed in double quotes, sub-task list A of some sub-tasks of the overall task enclosed in single quotes, and my task enclosed in angle brackets. Based on the following conditions, publish the corresponding tasks. If the conditions are insufficient, please return that the conditions are insufficient. Only tell me the published results.
-            "Overall task: {Overall_Task}"
-            'sub-task list A: {still_remained}'
-            <My task: {my_task}>
-
-            Based on the relationship between each task in sub-task list A and my task in the overall task, classify the tasks in list A into the following three types and then publish them:
-            1. Independent task: The tasks in sub-task list A that can be independently executed alongside my task to complete the overall task.
-            2. Preliminary task: The tasks in sub-task list A that need to be completed before my task to finish the overall task.
-            3. Subsequent task: The tasks in sub-task list A that must be executed after my task to complete the overall task.
-
-
-            {knowledge_of_decomposition}
-            {URTHT_format_instructions}
+            {URTH_format_instructions}
             """
 
-            independent_task_finder_prompt_template = ChatPromptTemplate.from_template(independent_task_finder_method)
+            remained_task_finder_prompt_template = ChatPromptTemplate.from_template(remained_task_finder_method)
 
-            chain_independent_task_finder = LLMChain(llm=llm, prompt=independent_task_finder_prompt_template)
+            chain_remained_task_finder = LLMChain(llm=llm, prompt=remained_task_finder_prompt_template)
 
-            URTHT_result = chain_independent_task_finder.run({
+            URTH_result = chain_remained_task_finder.run({
                 "my_id": my_id,
-                "Overall_Task": Overall_Task,
-                "still_remained": still_remained,
-                "my_task": D_result_parser['My task'],
-                "knowledge_of_decomposition": knowledge_of_decomposition,
-                "URTHT_format_instructions": URTHT_format_instructions,
+                "Remaining_task": Remaining_task,
+                "Already_published_task_list": Already_published_task_list,
+                "URTH_format_instructions": URTH_format_instructions
             })
 
-            URTHT_result_parser = URTHT_output_parser.parse(URTHT_result)
-            print("Unresolved remaining task handling result:", URTHT_result_parser)
+            URTH_result_parser = URTH_output_parser.parse(URTH_result)
+            print("Unresolved remaining task handling result:", URTH_result_parser)
 
-            if URTHT_result_parser["Published tasks"]:
-                Decomposed_Task_list.extend(ensure_list(URTHT_result_parser["Published tasks"]))
+            if URTH_result_parser["Still remained tasks"]:
+                still_remained = URTH_result_parser["Still remained tasks"]
+                PITT_schema = ResponseSchema(name="Published tasks",
+                                        description="Fill in here with a list of all the JSON dictionaries of tasks to be published. If there is nothing to publish, fill in an empty list.")
 
-        print("Unresolved remaining task handling complete.")
+                URTHT_response_schemas = [PITT_schema]
+                URTHT_output_parser = StructuredOutputParser.from_response_schemas(URTHT_response_schemas)
+                URTHT_format_instructions = URTHT_output_parser.get_format_instructions()
+                
+                independent_task_finder_method = """
+                I am {my_id}. 
+                Instruction: Check the overall task information enclosed in double quotes, sub-task list A of some sub-tasks of the overall task enclosed in single quotes, and my task enclosed in angle brackets. Based on the following conditions, publish the corresponding tasks. If the conditions are insufficient, please return that the conditions are insufficient. Only tell me the published results.
+                "Overall task: {Overall_Task}"
+                'sub-task list A: {still_remained}'
+                <My task: {my_task}>
+
+                Based on the relationship between each task in sub-task list A and my task in the overall task, classify the tasks in list A into the following three types and then publish them:
+                1. Independent task: The tasks in sub-task list A that can be independently executed alongside my task to complete the overall task.
+                2. Preliminary task: The tasks in sub-task list A that need to be completed before my task to finish the overall task.
+                3. Subsequent task: The tasks in sub-task list A that must be executed after my task to complete the overall task.
+
+
+                {knowledge_of_decomposition}
+                {URTHT_format_instructions}
+                """
+
+                independent_task_finder_prompt_template = ChatPromptTemplate.from_template(independent_task_finder_method)
+
+                chain_independent_task_finder = LLMChain(llm=llm, prompt=independent_task_finder_prompt_template)
+
+                URTHT_result = chain_independent_task_finder.run({
+                    "my_id": my_id,
+                    "Overall_Task": Overall_Task,
+                    "still_remained": still_remained,
+                    "my_task": D_result_parser['My task'],
+                    "knowledge_of_decomposition": knowledge_of_decomposition,
+                    "URTHT_format_instructions": URTHT_format_instructions,
+                })
+
+                URTHT_result_parser = URTHT_output_parser.parse(URTHT_result)
+                print("Unresolved remaining task handling result:", URTHT_result_parser)
+
+                if URTHT_result_parser["Published tasks"]:
+                    Decomposed_Task_list.extend(ensure_list(URTHT_result_parser["Published tasks"]))
+
+            print("Unresolved remaining task handling complete.")
+    else:
+        Decomposed_Task_list = [{"Task type":"independent task", "Content": Overall_Task, "Priority": 1}]
+
 
     # if Remaining_task != False:
     #     PIT_schema = ResponseSchema(name="Published independent tasks",
@@ -508,6 +508,7 @@ def decompose_task(
     # print("Final checker module complete.")
 
     # Create dataPacket
+    
 
     Suggestion_Task_list = []
     print("Decomposition complete. Data packet created.")
@@ -519,12 +520,12 @@ def decompose_task(
 
 if __name__ == "__main__":
     # Example usage
-    my_id = "c30r_4"
+    my_id = "c30r_0"
     overall_task_dict = {
-        "Content": " Connect the water pump to the pipe at point [10,10].",
+        "Content": "Build a drainage pipe driven by a water pump from point [6,6] to point [10,10], with the water pump connected to the pipe at point [10,10].",
         "Priority": 1
     }
-    my_capability = "Connect the water pump to the pipe."
+    my_capability = "Connect the water pump to the drainage pipe."
     #environmental_information = "There is a passable path from point M, which is the current location of me, to point B. The water pump and drainage pipe are stored at point C. The ground of the workspace is hard."
     
     # {"start point": "robot_location", "end point": "[10,10]", "path status": "passable"}
@@ -536,14 +537,16 @@ if __name__ == "__main__":
     environmental_information = {
             "pipe_information": {
                 "pipe_status": "folded",
-                "pipe_start_location": [0, 0],
-                "pipe_end_location": [0, 0]
+                "pipe_current_location_side1": [0, 0],
+                "pipe_current_location_side2": [0, 0]
             },
             "robot_location": robot_positions,
             "water_pump_location": [0, 0],
             "ground_condition": "hard",
-            "paths in the environment": "Passable everywhere."
+            "paths in the environment": "Any two points in the environment is passable."
         }
+    
+
     # environmental_information ={
     # "path_information": "Any two points in the environment are passable.",
     # "robot_location": {"c30r_0":[3,0], "c30r_1":[4,0], "c30r_2":[5,0]},
@@ -556,12 +559,12 @@ if __name__ == "__main__":
     knowledge_needed_input = """
     '''json
     {
-      "Location for loading or unloading work": string // Please fill in the coordinates or representative letter of the location for loading or unloading work. If neither is explicitly specified, this item should be filled in as unknown.
-      "Current location of the item to be loaded or unloaded": string // Please fill in the current coordinates or representative letter of the current location of the item to be loaded or unloaded. If neither is explicitly specified, this item should be filled in as unknown.
+      "Connection location of the water pump and pipe": string // Please fill in the coordinates or representative letter of the water pump installation location. If neither is explicitly specified, this item should be filled in as unknown.
+      "Current location of the water pump": string // Please fill in the current coordinates or representative letter of the water pump. If neither is explicitly specified, this item should be filled in as unknown.
       "Current location of me": string // Please fill in the coordinates or representative letter of my current location. If neither is explicitly specified, this item should be filled in as unknown.
       "Ground state": string // If the ground is soft, fill in soft. If the ground is hard, fill in hard. If neither is explicitly specified, this item should be filled in as unknown.
-      ""
-    }'''
+      "Pipe construction starting point": string // Please fill in the coordinates or representative letter of the starting point of the pipe construction. If neither is explicitly specified, this item should be filled with the default value Def.
+     }'''
     """
     knowledge_of_decomposition = """
     All tasks to be published should adhere to the following JSON format:
@@ -575,12 +578,22 @@ if __name__ == "__main__":
     }'''
     """ % (overall_task_dict["Priority"] + 1, overall_task_dict["Priority"], overall_task_dict["Priority"] - 1)
     knowledge_template = """
-     if (there is no passable path from the point {Current location of me} to the point {Location for loading or unloading work})
+      if (there is no passable path from the point {Current location of me} to the point {Connection location of the water pump and pipe})
     then [
       if ({Ground state} == hard)
-        then [publish preliminary task: Clear a passable path from point {Current location of me} to the point {Location for loading or unloading work}.]
+        then [publish preliminary task: Clear a passable path from point {Current location of me} to the point {Connection location of the water pump and pipe}.]
       elseif ({Ground state} == soft)
-        then [publish preliminary task: Lay down a working path to create a specialized working path from point {Current location of me} to the point {Location for loading or unloading work}.]
+        then [publish preliminary task: Lay down a working path to create a specialized working path from point {Current location of me} to the point {Connection location of the water pump and pipe}.]
+    ]
+    if (the water pump is not at point {Connection location of the water pump and pipe})
+    then [
+      publish preliminary task: Transport the water pump from point {Current location of the water pump} to the point {Connection location of the water pump and pipe}.
+    ]
+    if (the pipe status of pipe which is built to the point {Connection location of the water pump and pipe} is not laid)
+    then [
+        if ({Pipe construction starting point} is Def)
+            then [publish preliminary task: Build drainage pipe to the point {Connection location of the water pump and pipe}.]
+        else [publish preliminary task: Build drainage pipe from {Pipe construction starting point} to the point {Connection location of the water pump and pipe}.]
     ]
     """
 

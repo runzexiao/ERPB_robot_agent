@@ -35,7 +35,7 @@ def compare_two_text_content(A, B):
     if similarity > 70:
         print(f"{A} and {B} are using GPT, with sim = {similarity}")
         comparison_result_schema = ResponseSchema(name="comparison result",
-                                    description="Fill in the boolean value of the comparison result.")
+                                    description="Fill in the output result.")
                         
 
         response_schemas = [comparison_result_schema]
@@ -45,9 +45,8 @@ def compare_two_text_content(A, B):
         comparison_method = '''
         Instruction: Check the task content of task A enclosed in square brackets and the task B enclosed in angle brackets. 
 
-        If the meaning of the task A is the same as task B, then output the comparison result as the boolean value true.
-        otherwise, output the comparison result as the boolean value false.
-        Only output the comparison result, do not output any other information.
+        If task A and task B have the same meaning, you can output the task content of either one. If one task is a specific variant or possibility of the other, output the more specific task. If neither of these conditions applies, output boolean value false.  
+        Only output the result, do not output any other information.
 
         [task A: {A}]
         <task B: {B}>
@@ -75,8 +74,8 @@ def compare_two_text_content(A, B):
         return False
 
 
-# A = "Build drainage pipe from point [0,0] to the point [1,1]."
-# B = "Build drainage pipe to the point [1,1]."
+# A = "transport the pipe to [0, 0]."
+# B = "Build drainage pipe from point [0,0] to the point [1,1]."
 # print(compare_two_text_content(A, B))
 
 
