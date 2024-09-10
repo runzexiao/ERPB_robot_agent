@@ -87,7 +87,7 @@ class TaskManagerNode(Node):
                     'Task type': task['Task type'],
                     'Content': task['Content'],
                     'Worker id': task['Worker id'],
-                    'Task status': 'claimed' if task['Task type'] == 'My task' else 'published'
+                    'Task status': 'Claimed' if task['Task type'] == 'My task' else 'Published'
                 }
                 managed_task_info.append(task_info)
 
@@ -163,6 +163,7 @@ class TaskManagerNode(Node):
             task_description = request_dict['task description']
             my_function_description = request_dict['my function description']
             decomposed_task_id = request_dict['decomposed task id']
+           
 
             info = {
                 'collaborative_robots_basic_info': {
@@ -170,14 +171,16 @@ class TaskManagerNode(Node):
                     'task id': task_id,
                     'task description': task_description
                 },
-                'cop_function_description': {'robot id': robot_id, 'function_description':my_function_description}
+                'cop_function_description': '{{' + f'"robot id": {robot_id}' + f', "function_description": {my_function_description}' + '}}'
             }
+
+            self.get_logger().info(f'CCCCCCCCollaborative basic info received: {info["cop_function_description"]}')
 
             if decomposed_task_id not in self.collaborative_robots_info_list:
                 self.collaborative_robots_info_list[decomposed_task_id] = []
 
             self.collaborative_robots_info_list[decomposed_task_id].append(info)
-            self.get_logger().info(f'Collaborative basic info updated: {self.collaborative_robots_info_list}')
+            # self.get_logger().info(f'Collaborative basic info updated: {self.collaborative_robots_info_list}')
 
             response.success = True
         except Exception as e:
@@ -187,144 +190,146 @@ class TaskManagerNode(Node):
         return response
 
     def timer_callback(self):
-        if not self.exe_lock:
-            try:
-                for decomposed_task_id, managed_task_info in self.task_management.items():
-                    all_preliminary_done = all(
-                        task['Task status'] == 'done' for task in managed_task_info if task['Task type'] in ['preliminary task']
-                    )
-                    all_collaborative_claimed = all(
-                        task['Task status'] == 'prepared' for task in managed_task_info if task['Task type'] in ['collaborative task']
-                    )
-                    all_my_tasks_not_doing = all(task['Task status'] != 'doing' for id, tasklist in self.task_management.items() if id != decomposed_task_id for task in tasklist if task['Task type'] == 'My task')
+  
+        try:
+            for decomposed_task_id, managed_task_info in self.task_management.items():
+                all_preliminary_done = all(
+                    task['Task status'] == 'Done' for task in managed_task_info if task['Task type'] in ['preliminary task']
+                )
+                all_collaborative_claimed = all(
+                    task['Task status'] == 'prepared' for task in managed_task_info if task['Task type'] in ['collaborative task']
+                )
+                # self.get_logger().info(f'All collaborative tasks claimed: {all_collaborative_claimed}')
+                all_my_tasks_not_doing = all(task['Task status'] != 'Doing' for id, tasklist in self.task_management.items() if id != decomposed_task_id for task in tasklist if task['Task type'] == 'My task')
+                if all_preliminary_done and all_collaborative_claimed and all_my_tasks_not_doing and (not self.exe_lock):
+                    self.get_logger().info(f'Ready for calling execute_node_start_service.')
+                    my_task = next((task for task in managed_task_info if task['Task type'] == 'My task'), None)
+                    if my_task:
+                        client = self.create_client(StringToBool, 'execute_node_start_service', callback_group=self.callback_group)
+                        req = StringToBool.Request()
+                        req.data = json.dumps({
+                            'My ability': self.ability_for_my_task_list[decomposed_task_id],
+                            'Decomposed task id': decomposed_task_id,
+                            'Decomposed task type': self.decomposed_task_type_list[decomposed_task_id],
+                            'Task content': my_task['Content'],
+                            'Father decomposed from task id': self.Father_decomposed_from_task_id_list[decomposed_task_id],
+                            'Boss id': self.boss_id_list[decomposed_task_id],
+                            'My task id': my_task['Task id'],
+                            'Collaborative robots info list': self.collaborative_robots_info_list[decomposed_task_id]
+                        })
+                        # self.get_logger().info(f'Calling execute_node_start_service with {req.data}')
+                        self.get_logger().info(f'XXXXXXXcop_list before exe with decomposed task id {decomposed_task_id}: {self.collaborative_robots_info_list[decomposed_task_id]}')
+                        client.call_async(req)
+                        self.exe_lock = True
+                        self.get_logger().info(f'Execution node is locked.')
+                        break
 
-                    if all_preliminary_done and all_collaborative_claimed and all_my_tasks_not_doing:
-                        self.get_logger().info(f'Ready for calling execute_node_start_service.')
-                        my_task = next((task for task in managed_task_info if task['Task type'] == 'My task'), None)
-                        if my_task:
-                            client = self.create_client(StringToBool, 'execute_node_start_service', callback_group=self.callback_group)
-                            req = StringToBool.Request()
-                            req.data = json.dumps({
-                                'My ability': self.ability_for_my_task_list[decomposed_task_id],
-                                'Decomposed task id': decomposed_task_id,
-                                'Decomposed task type': self.decomposed_task_type_list[decomposed_task_id],
-                                'Task content': my_task['Content'],
-                                'Father decomposed from task id': self.Father_decomposed_from_task_id_list[decomposed_task_id],
-                                'Boss id': self.boss_id_list[decomposed_task_id],
-                                'My task id': my_task['Task id'],
-                                'Collaborative robots info list': self.collaborative_robots_info_list[decomposed_task_id]
+                # 检查并发送状态更新请求
+                current_status = 'Doing'
+                if (any(task['Task status'] == 'Doing' for task in managed_task_info if task['Task type'] in ['My task', 'independent task', 'collaborative task'])
+                    and self.status_sent[decomposed_task_id].get(current_status) != True):
+                    boss_id = self.boss_id_list[decomposed_task_id]
+                    self.get_logger().info(f'XXXXYYYYXXXYYYYYboss_id_list: {self.boss_id_list}')
+                    client = self.create_client(StringToBool, f'/{boss_id}/managed_task_info_update', callback_group=self.callback_group)
+                    req = StringToBool.Request()
+                    req.data = json.dumps({
+                        'Decomposed task id': self.Father_decomposed_from_task_id_list[decomposed_task_id],
+                        'Task id': decomposed_task_id,
+                        'key': 'Task status',
+                        'keyvalue': 'Doing'
+                    })
+                    self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "doing"')
+                    client.call_async(req)
+
+                    shadow_list = self.shadow_boss_list[decomposed_task_id]
+                    if shadow_list:
+                        for shadow in shadow_list:
+                            shadow_boss_id = shadow['Shadow boss id']
+                            shadow_decomposed_id = shadow['Shadow decomposed task id']
+                            shadow_task_id = shadow['Shadow task id']
+                            client1 = self.create_client(StringToBool, f'/{shadow_boss_id}/managed_task_info_update', callback_group=self.callback_group)
+                            req1 = StringToBool.Request()
+                            req1.data = json.dumps({
+                                'Decomposed task id': shadow_decomposed_id,
+                                'Task id': shadow_task_id,
+                                'key': 'Task status',
+                                'keyvalue': 'Doing'
                             })
-                            self.get_logger().info(f'Calling execute_node_start_service with {req.data}')
-                            client.call_async(req)
-                            self.exe_lock = True
-                            self.get_logger().info(f'Execution node is locked.')
-                            break
+                            self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "doing"')
+                            client1.call_async(req1)
 
-                    # 检查并发送状态更新请求
-                    current_status = 'doing'
-                    if (any(task['Task status'] == 'doing' for task in managed_task_info if task['Task type'] in ['My task', 'independent task', 'collaborative task'])
-                        and self.status_sent[decomposed_task_id].get(current_status) != True):
-                        boss_id = self.boss_id_list[decomposed_task_id]
-                        client = self.create_client(StringToBool, f'{boss_id}/managed_task_info_update', callback_group=self.callback_group)
-                        req = StringToBool.Request()
-                        req.data = json.dumps({
-                            'Decomposed task id': self.Father_decomposed_from_task_id_list[decomposed_task_id],
-                            'Task id': decomposed_task_id,
-                            'key': 'Task status',
-                            'keyvalue': 'doing'
-                        })
-                        self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "doing"')
-                        client.call_async(req)
+                    self.status_sent[decomposed_task_id][current_status] = True
 
-                        shadow_list = self.shadow_boss_list[decomposed_task_id]
-                        if shadow_list:
-                            for shadow in shadow_list:
-                                shadow_boss_id = shadow['Shadow boss id']
-                                shadow_decomposed_id = shadow['Shadow decomposed task id']
-                                shadow_task_id = shadow['Shadow task id']
-                                client1 = self.create_client(StringToBool, f'{shadow_boss_id}/managed_task_info_update', callback_group=self.callback_group)
-                                req1 = StringToBool.Request()
-                                req1.data = json.dumps({
-                                    'Decomposed task id': shadow_decomposed_id,
-                                    'Task id': shadow_task_id,
-                                    'key': 'Task status',
-                                    'keyvalue': 'doing'
-                                })
-                                self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "doing"')
-                                client1.call_async(req1)
+                current_status = 'Done'
+                if (all(task['Task status'] == 'Done' for task in managed_task_info if task['Task type'] in ['My task', 'independent task', 'collaborative task'])
+                    and self.status_sent[decomposed_task_id].get(current_status) != True):
+                    boss_id = self.boss_id_list[decomposed_task_id]
+                    client = self.create_client(StringToBool, f'/{boss_id}/managed_task_info_update', callback_group=self.callback_group)
+                    req = StringToBool.Request()
+                    req.data = json.dumps({
+                        'Decomposed task id': self.Father_decomposed_from_task_id_list[decomposed_task_id],
+                        'Task id': decomposed_task_id,
+                        'key': 'Task status',
+                        'keyvalue': 'Done'
+                    })
+                    self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "done"')
+                    client.call_async(req)
+                    
+                    shadow_list = self.shadow_boss_list[decomposed_task_id]
+                    if shadow_list:
+                        for shadow in shadow_list:
+                            shadow_boss_id = shadow['Shadow boss id']
+                            shadow_decomposed_id = shadow['Shadow decomposed task id']
+                            shadow_task_id = shadow['Shadow task id']
+                            client1 = self.create_client(StringToBool, f'/{shadow_boss_id}/managed_task_info_update', callback_group=self.callback_group)
+                            req1 = StringToBool.Request()
+                            req1.data = json.dumps({
+                                'Decomposed task id': shadow_decomposed_id,
+                                'Task id': shadow_task_id,
+                                'key': 'Task status',
+                                'keyvalue': 'Done'
+                            })
+                            self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "doing"')
+                            client1.call_async(req1)
 
-                        self.status_sent[decomposed_task_id][current_status] = True
 
-                    current_status = 'done'
-                    if (all(task['Task status'] == 'done' for task in managed_task_info if task['Task type'] in ['My task', 'independent task', 'collaborative task'])
-                        and self.status_sent[decomposed_task_id].get(current_status) != True):
-                        boss_id = self.boss_id_list[decomposed_task_id]
-                        client = self.create_client(StringToBool, f'{boss_id}/managed_task_info_update', callback_group=self.callback_group)
-                        req = StringToBool.Request()
-                        req.data = json.dumps({
-                            'Decomposed task id': self.Father_decomposed_from_task_id_list[decomposed_task_id],
-                            'Task id': decomposed_task_id,
-                            'key': 'Task status',
-                            'keyvalue': 'done'
-                        })
-                        self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "done"')
-                        client.call_async(req)
-                        
-                        shadow_list = self.shadow_boss_list[decomposed_task_id]
-                        if shadow_list:
-                            for shadow in shadow_list:
-                                shadow_boss_id = shadow['Shadow boss id']
-                                shadow_decomposed_id = shadow['Shadow decomposed task id']
-                                shadow_task_id = shadow['Shadow task id']
-                                client1 = self.create_client(StringToBool, f'{shadow_boss_id}/managed_task_info_update', callback_group=self.callback_group)
-                                req1 = StringToBool.Request()
-                                req1.data = json.dumps({
-                                    'Decomposed task id': shadow_decomposed_id,
-                                    'Task id': shadow_task_id,
-                                    'key': 'Task status',
-                                    'keyvalue': 'done'
-                                })
-                                self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "doing"')
-                                client1.call_async(req1)
-    
+                    self.status_sent[decomposed_task_id][current_status] = True
 
-                        self.status_sent[decomposed_task_id][current_status] = True
+                current_status = 'prepared'
+                if (all(task['Task status'] == 'prepared' for task in managed_task_info if task['Task type'] in ['My task', 'collaborative task'])
+                    and self.status_sent[decomposed_task_id].get(current_status) != True):
+                    boss_id = self.boss_id_list[decomposed_task_id]
+                    client = self.create_client(StringToBool, f'/{boss_id}/managed_task_info_update', callback_group=self.callback_group)
+                    req = StringToBool.Request()
+                    req.data = json.dumps({
+                        'Decomposed task id': self.Father_decomposed_from_task_id_list[decomposed_task_id],
+                        'Task id': decomposed_task_id,
+                        'key': 'Task status',
+                        'keyvalue': 'prepared'
+                    })
+                    self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "prepared"')
+                    client.call_async(req)
 
-                    current_status = 'prepared'
-                    if (all(task['Task status'] == 'prepared' for task in managed_task_info if task['Task type'] in ['My task', 'collaborative task'])
-                        and self.status_sent[decomposed_task_id].get(current_status) != True):
-                        boss_id = self.boss_id_list[decomposed_task_id]
-                        client = self.create_client(StringToBool, f'{boss_id}/managed_task_info_update', callback_group=self.callback_group)
-                        req = StringToBool.Request()
-                        req.data = json.dumps({
-                            'Decomposed task id': self.Father_decomposed_from_task_id_list[decomposed_task_id],
-                            'Task id': decomposed_task_id,
-                            'key': 'Task status',
-                            'keyvalue': 'prepared'
-                        })
-                        self.get_logger().info(f'Updating boss {boss_id} with task {decomposed_task_id} status to "prepared"')
-                        client.call_async(req)
+                    shadow_list = self.shadow_boss_list[decomposed_task_id]
+                    if shadow_list:
+                        for shadow in shadow_list:
+                            shadow_boss_id = shadow['Shadow boss id']
+                            shadow_decomposed_id = shadow['Shadow decomposed task id']
+                            shadow_task_id = shadow['Shadow task id']
+                            client1 = self.create_client(StringToBool, f'/{shadow_boss_id}/managed_task_info_update', callback_group=self.callback_group)
+                            req1 = StringToBool.Request()
+                            req1.data = json.dumps({
+                                'Decomposed task id': shadow_decomposed_id,
+                                'Task id': shadow_task_id,
+                                'key': 'Task status',
+                                'keyvalue': 'prepared'
+                            })
+                            self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "doing"')
+                            client1.call_async(req1)
 
-                        shadow_list = self.shadow_boss_list[decomposed_task_id]
-                        if shadow_list:
-                            for shadow in shadow_list:
-                                shadow_boss_id = shadow['Shadow boss id']
-                                shadow_decomposed_id = shadow['Shadow decomposed task id']
-                                shadow_task_id = shadow['Shadow task id']
-                                client1 = self.create_client(StringToBool, f'{shadow_boss_id}/managed_task_info_update', callback_group=self.callback_group)
-                                req1 = StringToBool.Request()
-                                req1.data = json.dumps({
-                                    'Decomposed task id': shadow_decomposed_id,
-                                    'Task id': shadow_task_id,
-                                    'key': 'Task status',
-                                    'keyvalue': 'prepared'
-                                })
-                                self.get_logger().info(f'Updating boss {shadow_boss_id} with task {shadow_task_id} status to "doing"')
-                                client1.call_async(req1)
-
-                        self.status_sent[decomposed_task_id][current_status] = True
-            except Exception as e:
-                self.get_logger().error(f'Error in timer_callback: {e}')
+                    self.status_sent[decomposed_task_id][current_status] = True
+        except Exception as e:
+            self.get_logger().error(f'Error in timer_callback: {e}')
 
 def main(args=None):
     rclpy.init(args=args)

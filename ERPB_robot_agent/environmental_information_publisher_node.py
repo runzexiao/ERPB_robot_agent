@@ -15,10 +15,8 @@ class EnvInfoPublisher(Node):
 
         # 初始化机器人的位置信息字典
         self.robot_positions = {'c30r_0':[0, 0], 'c30r_1':[0, 0], 'c30r_2':[0, 0], 'c30r_3':[0, 0], 'c30r_4':[0, 0], 'c30r_5':[0, 0]}
-        
         # 初始化环境信息
         self.env_info = {
-            "path_information": "Any two points in the environment are passable.",
             "pipe_information": {
                 "pipe_status": "folded",
                 "pipe_start_location": [0, 0],
@@ -26,7 +24,8 @@ class EnvInfoPublisher(Node):
             },
             "robot_location": self.robot_positions,
             "water_pump_location": [0, 0],
-            "ground_condition": "hard"
+            "ground_condition": "hard",
+            "paths in the environment": "Any two points in the environment is passable."
         }
 
         # 订阅每个机器人的位置话题
@@ -36,7 +35,7 @@ class EnvInfoPublisher(Node):
             subscriber = self.create_subscription(
                 PoseStamped,
                 topic_name,
-                self.create_listener_callback(f'/c30r_{i}'),
+                self.create_listener_callback(f'c30r_{i}'),
                 10)
             self.subscribers.append(subscriber)
         
@@ -46,11 +45,12 @@ class EnvInfoPublisher(Node):
     def create_listener_callback(self, robot_name):
         def listener_callback(msg):
             # 提取x和y坐标
-            x = msg.pose.position.x
-            y = msg.pose.position.y
+            x = float(round(msg.pose.position.x))
+            y = float(round(msg.pose.position.y))
             self.robot_positions[robot_name] = [x, y]
             self.env_info['robot_location'] = self.robot_positions
-            self.get_logger().info(f'{robot_name} position: x={x}, y={y}')
+
+            # self.get_logger().info(f'{robot_name} position: x={x}, y={y}')
         return listener_callback
 
     def timer_callback(self):

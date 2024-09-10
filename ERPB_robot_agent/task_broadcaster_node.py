@@ -311,7 +311,7 @@ class TaskBroadcasterNode(Node):
         try:
             # 获取当前的已发布任务列表
             published_task_list = self.get_published_task_list()
-
+            #self.get_logger().info(f'Global task list: {self.global_task_list}')
             # 将任务列表转换为JSON格式的字符串
             published_task_json = json.dumps(published_task_list)
 
@@ -323,6 +323,7 @@ class TaskBroadcasterNode(Node):
             # 绘制依赖关系图
                 self.draw_dependency_graph()
                 self.add_flag = False
+                self.get_logger().info(f'Global task list: {self.global_task_list}')
             # self.get_logger().info('Published current task list in JSON format.')
 
         except Exception as e:

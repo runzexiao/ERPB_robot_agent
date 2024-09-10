@@ -172,96 +172,102 @@ class TaskDecompositionNode(Node):
         #self.get_logger().info(f'Updated environmental information: {self.environmental_information}')
 
     def task_decomposition_callback(self, request, response):
-        self.get_logger().info("Starting task decomposition...")
+        try:
+            self.get_logger().info("Starting task decomposition...")
 
-        # if not self.environmental_info_ready:
-        #     self.get_logger().info('Environmental information not ready.')
-        #     # response.success = False
-        #     # return response
-        
-        while not self.environmental_info_ready:
-            rclpy.spin_once(self, timeout_sec=0.9)  # 确保其他回调函数可以被调用
-            self.get_logger().info('Environmental information not ready.')
+            # if not self.environmental_info_ready:
+            #     self.get_logger().info('Environmental information not ready.')
+            #     # response.success = False
+            #     # return response
+            
+            while not self.environmental_info_ready:
+                rclpy.spin_once(self, timeout_sec=0.9)  # 确保其他回调函数可以被调用
+                self.get_logger().info('Environmental information not ready.')
 
-        
+            
 
-        # 从请求中提取信息
-        # request_dict = {entry.key: entry.value for entry in request.data.entries}
-        request_dict = json.loads(request.data)
-        my_id = request_dict['My id']
-        task_content = request_dict['Task content']
-        priority = request_dict['Priority']
-        my_ability = request_dict['My ability']
-        from_start_flag = request_dict['From start flag']
-        decomposed_task_type = request_dict['Decomposed task type']
-        decomposed_task_id = request_dict['Decomposed task id']
-        Father_decomposed_from_task_id = request_dict['Father decomposed from task id']
-        boss_id = request_dict['Boss id']
-        Shadow_boss = request_dict['Shadow boss']
-        
-        
-        self.load_parameters(my_ability)
-        
+            # 从请求中提取信息
+            # request_dict = {entry.key: entry.value for entry in request.data.entries}
+            request_dict = json.loads(request.data)
+            my_id = request_dict['My id']
+            task_content = request_dict['Task content']
+            priority = request_dict['Priority']
+            my_ability = request_dict['My ability']
+            from_start_flag = request_dict['From start flag']
+            decomposed_task_type = request_dict['Decomposed task type']
+            decomposed_task_id = request_dict['Decomposed task id']
+            Father_decomposed_from_task_id = request_dict['Father decomposed from task id']
+            boss_id = request_dict['Boss id']
+            Shadow_boss = request_dict['Shadow boss']
+            
+            
+            self.load_parameters(my_ability)
+            
 
-        self.get_logger().info(f'Task content: {task_content}')
-        self.get_logger().info(f'My ability: {my_ability}')
+            self.get_logger().info(f'Task content: {task_content}')
+            self.get_logger().info(f'My ability: {my_ability}')
 
-        overall_task_dict = {"Content": task_content, "Priority": priority}
-        # rclpy.spin_once(self, timeout_sec=0.1)  # 确保其他回调函数可以被调用
-        # Call the task decomposition function
-        decomposed_task_list, suggestion_task_list = decompose_task(
-            my_id,
-            overall_task_dict,
-            my_ability,
-            self.environmental_information,
-            self.knowledge_needed_input,
-            self.knowledge_template,
-            from_start_flag
-        )
+            overall_task_dict = {"Content": task_content, "Priority": priority}
+            # rclpy.spin_once(self, timeout_sec=0.1)  # 确保其他回调函数可以被调用
+            # Call the task decomposition function
+            decomposed_task_list, suggestion_task_list = decompose_task(
+                my_id,
+                overall_task_dict,
+                my_ability,
+                self.environmental_information,
+                self.knowledge_needed_input,
+                self.knowledge_template,
+                from_start_flag
+            )
 
-        ##Only for listener cop
-        if decomposed_task_type == 'collaborative task':
-            decomposed_task_list = [task for task in decomposed_task_list if task['Task type'] != 'collaborative task']
-        if decomposed_task_type == 'subsequent task':
-            preliminary_task_list = [task for task in decomposed_task_list if task['Task type'] == 'preliminary task']
-            qury_id = Father_decomposed_from_task_id
-            client = self.create_client(StringToString, '/broadcaster_query_service')
-            request = StringToString.Request()
-            request.request_data = qury_id
-            response = client.call(request)
-            if response.response_data == 'Task not found':
-                raise ValueError("An error occurred due to invalid condition")
-            father_task_content = response.response_data
-            for task in preliminary_task_list:
-                if compare_two_text_content(task['Content'], father_task_content):
-                    break
-            else:
-                decomposed_task_list.append({'Task type': 'preliminary task', 'Content': father_task_content, 'Priority': priority +1})
-                
-        
-        self.get_logger().info(f'Decomposed task list: {decomposed_task_list}')
-        data_packet_for_broadcaster = self.create_data_packet_for_broadcaster(decomposed_task_list, self.my_robot_id, decomposed_task_id)
-        # Request broadcaster_add_service
-        broadcaster_add_req = StringToDict.Request()
-        broadcaster_add_req.data = json.dumps(data_packet_for_broadcaster)
-        broadcaster_add_resp = self.broadcaster_add_service_client.call(broadcaster_add_req)
-        
-        temp_to_global_id_map = {entry.key: entry.value for entry in broadcaster_add_resp.dict.entries}
+            ##Only for listener cop
+            if decomposed_task_type == 'collaborative task':
+                decomposed_task_list = [task for task in decomposed_task_list if task['Task type'] != 'collaborative task']
+            if decomposed_task_type == 'subsequent task':
+                preliminary_task_list = [task for task in decomposed_task_list if task['Task type'] == 'preliminary task']
+                qury_id = Father_decomposed_from_task_id
+                client = self.create_client(StringToString, '/broadcaster_query_service')
+                request = StringToString.Request()
+                request.request_data = qury_id
+                response = client.call(request)
+                if response.response_data == 'Task not found':
+                    raise ValueError("An error occurred due to invalid condition")
+                father_task_content = response.response_data
+                for task in preliminary_task_list:
+                    if compare_two_text_content(task['Content'], father_task_content):
+                        break
+                else:
+                    decomposed_task_list.append({'Task type': 'preliminary task', 'Content': father_task_content, 'Priority': priority +1})
+                    
+            
+            self.get_logger().info(f'Decomposed task list: {decomposed_task_list}')
+            data_packet_for_broadcaster = self.create_data_packet_for_broadcaster(decomposed_task_list, self.my_robot_id, decomposed_task_id)
+            # Request broadcaster_add_service
+            broadcaster_add_req = StringToDict.Request()
+            broadcaster_add_req.data = json.dumps(data_packet_for_broadcaster)
+            broadcaster_add_resp = self.broadcaster_add_service_client.call(broadcaster_add_req)
+            
+            temp_to_global_id_map = {entry.key: entry.value for entry in broadcaster_add_resp.dict.entries}
 
-        data_packet_for_manager = self.create_data_packet_for_manager(data_packet_for_broadcaster['Task list'], temp_to_global_id_map, my_ability, decomposed_task_id, decomposed_task_type, Father_decomposed_from_task_id, boss_id, Shadow_boss)
- 
-        # Request task_manager_start_service
-        task_manager_req = StringToBool.Request()
-        task_manager_req.data = json.dumps(data_packet_for_manager)
-        self.get_logger().info(f'task_manager_req:{task_manager_req.data}')
-        self.task_manager_start_service_client.call_async(task_manager_req)
+            data_packet_for_manager = self.create_data_packet_for_manager(data_packet_for_broadcaster['Task list'], temp_to_global_id_map, my_ability, decomposed_task_id, decomposed_task_type, Father_decomposed_from_task_id, boss_id, Shadow_boss)
+    
+            # Request task_manager_start_service
+            task_manager_req = StringToBool.Request()
+            task_manager_req.data = json.dumps(data_packet_for_manager)
+            self.get_logger().info(f'task_manager_req:{task_manager_req.data}')
+            self.task_manager_start_service_client.call_async(task_manager_req)
 
-        # Request bidding_evaluation_start_service
-        bidding_evaluation_req = StringToBool.Request()
-        bidding_evaluation_req.data = json.dumps({'Task list': data_packet_for_manager['Task list'], 'decomposed task id': decomposed_task_id})
-        self.get_logger().info(f'bidding_evaluation_req:{bidding_evaluation_req.data}')
-        self.bidding_evaluation_start_service_client.call_async(bidding_evaluation_req)
-        response.success = True
+            # Request bidding_evaluation_start_service
+            bidding_evaluation_req = StringToBool.Request()
+            bidding_evaluation_req.data = json.dumps({'Task list': data_packet_for_manager['Task list'], 'decomposed task id': decomposed_task_id})
+            self.get_logger().info(f'bidding_evaluation_req:{bidding_evaluation_req.data}')
+            self.bidding_evaluation_start_service_client.call_async(bidding_evaluation_req)
+            response.success = True
+        except ValueError as e:
+            self.get_logger().error(f"发生了 ValueError 错误: {e}")
+            # 处理异常或提供默认响应
+        except Exception as e:
+            self.get_logger().error(f"发生了意外错误: {e}")
         return response
 
 

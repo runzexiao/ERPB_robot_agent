@@ -20,6 +20,7 @@ class BiddingEvaluationNode(Node):
         self.namespace = self.get_namespace().lstrip('/')
         self.task_dict = {}
         self.callback_group = ReentrantCallbackGroup()
+        self.timer_flag = True
         self.timer = None
 
         # 服务服务器
@@ -56,7 +57,7 @@ class BiddingEvaluationNode(Node):
             task_dict[task_id] = {
                 'bidding': [],
                 'task description': task['Content'],
-                'task status': 'published'
+                'task status': 'Published'
             }
         return task_dict
 
@@ -76,9 +77,12 @@ class BiddingEvaluationNode(Node):
         task_id = bidding_packet['Task id']
         robot_id = bidding_packet['Robot id']
 
-        if self.task_dict[task_id]['task status'] == 'published':
+        self.get_logger().info(f'XXXXXXXXReceived bidding packet for task {task_id} from robot {robot_id}')
+
+        if self.task_dict[task_id]['task status'] == 'Published':
             self.task_dict[task_id]['bidding'].append(bidding_packet)
-        elif self.task_dict[task_id]['task status'] == 'claimed':
+            self.get_logger().info(f'Task evaluation dict after bidding for {task_id} :{self.task_dict}')
+        elif self.task_dict[task_id]['task status'] == 'Claimed':
             self.bidding_result_input_service_wall_client = self.create_client(
                 BoolStringToBool,
                 f'/{robot_id}/bidding_result_input_service',
@@ -91,43 +95,47 @@ class BiddingEvaluationNode(Node):
         
         response.success = True
         return response
+    
 
     def process_tasks_after_wait(self):
-        self.timer.cancel()
-        results = {}
-        task_dict_now = deepcopy(self.task_dict)
-        task_dict_published_now = {task_id: task_content for task_id, task_content in task_dict_now.items() if task_content['task status'] == 'published'}
-        
-        for task_id, task_content in task_dict_published_now.items():
-            bidding_list = task_content['bidding']
-            if bidding_list:
-                result = select_robot_for_task(task_content['task description'], bidding_list)
-            else:
-                result = False
+        if self.timer_flag:
+            self.get_logger().info('Processing tasks after wait')
+            results = {}
+            task_dict_now = deepcopy(self.task_dict)
+            task_dict_published_now = {task_id: task_content for task_id, task_content in task_dict_now.items() if task_content['task status'] == 'Published'}
             
-            results[task_id] = result
-            if result:
-                self.task_dict[task_id]['task status'] = 'claimed'
-                self.get_logger().info(f'Task {task_id} claimed by robot {result}')
-                self.notify_robots(task_id, result, bidding_list)
-            else:
-                self.reject_task(task_id, bidding_list)
+            for task_id, task_content in task_dict_published_now.items():
+                bidding_list = task_content['bidding']
+                if bidding_list:
+                    result = select_robot_for_task(task_content['task description'], bidding_list)
+                else:
+                    result = False
+                
+                results[task_id] = result
+                if result:
+                    self.task_dict[task_id]['task status'] = 'Claimed'
+                    self.get_logger().info(f'Task {task_id} claimed by robot {result}')
+                    self.notify_robots(task_id, result, bidding_list)
+                else:
+                    self.reject_task(task_id, bidding_list)
+            self.get_logger().info(f'???Results :{results}')
+            # rclpy.spin_once(self, timeout_sec=0.5)
 
-        rclpy.spin_once(self, timeout_sec=0.5)
-
-        task_dict_now_2 = deepcopy(self.task_dict)
-        for task_id, new_task_content in task_dict_now_2.items():
-            if task_id in task_dict_now:
-                old_list = task_dict_now[task_id].get('bidding', [])
-                new_list = new_task_content.get('bidding', [])
-                updated_list = [item for item in new_list if item not in old_list]
-                self.task_dict[task_id]['bidding'] = updated_list
-        
-        if not all(results.values()):
-            self.timer = self.create_timer(10.0, self.process_tasks_after_wait)
-        else:
-            rclpy.spin_once(self, timeout_sec=0.1)
-            self.cleanup_remaining_biddings()
+            # task_dict_now_2 = deepcopy(self.task_dict)
+            # for task_id, new_task_content in task_dict_now_2.items():
+            #     if task_id in task_dict_now:
+            #         old_list = task_dict_now[task_id].get('bidding', [])
+            #         new_list = new_task_content.get('bidding', [])
+            #         updated_list = [item for item in new_list if item not in old_list]
+            #         self.task_dict[task_id]['bidding'] = updated_list
+            
+            self.get_logger().info(f'endmmmmmmmmmmmmm')
+            if all(results.values()):
+                self.timer_flag = False
+                self.get_logger().info('Evaluation is completed.')
+            # else:
+            #     rclpy.spin_once(self, timeout_sec=0.1)
+            #     self.cleanup_remaining_biddings()
 
     def notify_robots(self, task_id, selected_robot_id, bidding_list):
         self.bidding_result_input_service_client = self.create_client(

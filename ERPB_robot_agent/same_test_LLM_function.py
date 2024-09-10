@@ -75,8 +75,8 @@ def compare_two_text_content(A, B):
         return False
 
 
-# A = "Task unload the water pump from truck C to the point B."
-# B = "Drop down the water pump from truck C to the point B."
+# A = "Build drainage pipe from point [0,0] to the point [1,1]."
+# B = "Build drainage pipe to the point [1,1]."
 # print(compare_two_text_content(A, B))
 
 

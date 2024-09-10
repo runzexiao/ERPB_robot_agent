@@ -228,6 +228,7 @@ class BiddingNode(Node):
                 self.get_logger().info('Before compare')
                 # 跳过已经投标但被拒绝的任务和CAT_result_parser判别为false的任务
                 if task_id in self.rejected_task_ids or task_id in self.unscannable_task_ids:
+                    self.get_logger().info(f"Task {task_id} has been rejected or unscannable, skipping...")
                     continue
 
                 # 判断任务内容是否有自己能够完成的部分

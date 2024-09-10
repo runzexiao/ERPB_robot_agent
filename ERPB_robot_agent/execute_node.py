@@ -17,6 +17,8 @@ from execute_LLM_function import generate_function_trans_result
 from ament_index_python.packages import get_package_share_directory
 import yaml
 import math
+from threading import Event
+
 
 class ExecuteNode(Node):
     def __init__(self):
@@ -50,7 +52,7 @@ class ExecuteNode(Node):
 
 
         # Initialize environmental information
-        self.environmental_information = {}
+        self.environment_info = {}
         self.environmental_info_ready = False
 
         # Subscribers
@@ -65,10 +67,11 @@ class ExecuteNode(Node):
         self.get_logger().info(f'Execute Node of {self.robot_id} is ready.')
 
     def environment_info_callback(self, msg):
-        self.environmental_information = json.loads(msg.data)
-        self.current_position = self.environmental_information['robot_location'][self.robot_id]
+        self.environment_info = json.loads(msg.data)
+        self.current_position = self.environment_info['robot_location'][self.robot_id]
+        # self.get_logger().info(f'current_position: {self.current_position}')
         self.environmental_info_ready = True
-        #self.get_logger().info(f'Updated environmental information: {self.environmental_information}')
+        #self.get_logger().info(f'Updated environmental information: {self.environment_info}')
     def load_parameters(self, ability):
         self.get_logger().info('Load Params!')
         ability_slash = ability.replace(' ', '_')
@@ -80,36 +83,38 @@ class ExecuteNode(Node):
         self.get_logger().info('Load over!')
 
         self.execute_needed_input = config[ability_slash]['execute_needed_input']#Dictionary T
-        self.get_logger().info(f'Load self.execute_needed_input {self.execute_needed_input}!')
         self.execute_input_variable_list = config[ability_slash]['execute_input_variable_list']#variable_list
-        self.get_logger().info(f'Load execute_input_variable_list {self.execute_input_variable_list}!')
+
         self.execute_process = config[ability_slash]['execute_process']#T1
-        self.get_logger().info(f'Load self.execute_process {self.execute_process}!')
+
         self.my_function_description = config[ability_slash]['my_function_description']#T2
-        self.get_logger().info(f'Load self.my_function_description {self.my_function_description}!')
+
+
         self.my_function_defination = config[ability_slash]['my_function_defination']#T3
-        self.get_logger().info(f'Load self.my_function_defination {self.my_function_defination}!')
+
         self.my_function_name = config[ability_slash]['my_function_name']
-        self.get_logger().info(f'Load self.my_function_name {self.my_function_name}!')
 
-        self.get_logger().info('params input!')
 
-        # self.get_logger().info(f'my_function_defination{self.my_function_defination}')
-        # exec(self.my_function_defination)  # 动态加载方法到类中
+        self.get_logger().info(f'my_function_defination{self.my_function_defination}')
+        exec(self.my_function_defination)  # 动态加载方法到类中
 
-        # # 将定义的函数绑定到 MyRobot 类
-        # for name in eval(self.my_function_name):
-        #     setattr(ExecuteNode, name, locals()[name])
+        # 将定义的函数绑定到 MyRobot 类
+        for name in eval(self.my_function_name):
+            setattr(ExecuteNode, name, locals()[name])
 
     
 
     def instruction_listener_callback(self, request, response):
+        self.get_logger().info(f'XXRZ instruction_listener_callback: {request.data}')
         request_dict = json.loads(request.data)
         function_name = request_dict['function name']
         function_input = request_dict['function input']
-        lag = function_name + '(' + function_input +')'
-        #eval(lag)
+        lag = 'self.' + function_name + '(*' + str(function_input) +')'
+        self.get_logger().info(f'execute from listener XRZ lag: {lag}')
+        eval(lag)
+        self.get_logger().info(f'XXRZ after eval:{lag}')
         response.success = True
+        self.get_logger().info(f'XXRZ response.success :{response.success}')
         return response
 
 
@@ -134,6 +139,7 @@ class ExecuteNode(Node):
             collaborative_robots_info_list = request_dict['Collaborative robots info list']
             collaborative_robots_basic_info = [a['collaborative_robots_basic_info'] for a in collaborative_robots_info_list]
             cops_function_description = [a['cop_function_description'] for a in collaborative_robots_info_list]
+            cops_function_description = '[' + ",".join(cops_function_description) + ']'
          
             self.get_logger().info('Before loading params.')
             self.load_parameters(my_ability)
@@ -141,28 +147,34 @@ class ExecuteNode(Node):
             self.get_logger().info('After loading params.')
             # 判断'Decomposed task type'的值
             if decomposed_task_type != 'collaborative task':
-                self.update_task_status(decomposed_task_id, my_task_id, 'doing')
+                self.update_task_status(decomposed_task_id, my_task_id, 'Doing')
                 for basic_info in collaborative_robots_basic_info:
-                    self.update_task_status(decomposed_task_id, basic_info['task id'], 'doing') 
+                    self.update_task_status(decomposed_task_id, basic_info['task id'], 'Doing') 
                     
 
                 # 调用generate_function_trans_result函数
-                self.get_logger().info(f'task_content:{type(task_content)},self.robot_id:{type(self.robot_id)},collaborative_robots_basic_info:{type(collaborative_robots_basic_info)},self.environmental_information:{type(self.environmental_information)},self.execute_needed_input:{type(self.execute_needed_input)},self.execute_input_variable_list:{type(self.execute_input_variable_list)},self.execute_process:{type(self.execute_process)},self.my_function_description:{type(self.my_function_description)},cops_function_description:{type(cops_function_description)}')
-                function_list = generate_function_trans_result(task_content, self.robot_id, collaborative_robots_basic_info, self.environmental_information, self.execute_needed_input, eval(self.execute_input_variable_list), self.execute_process, self.my_function_description, str(cops_function_description))
+                
+                self.get_logger().info(f'task_content:{type(task_content)},self.robot_id:{type(self.robot_id)},collaborative_robots_basic_info:{type(collaborative_robots_basic_info)},self.environment_info:{type(self.environment_info)},self.execute_needed_input:{type(self.execute_needed_input)},self.execute_input_variable_list:{type(self.execute_input_variable_list)},self.execute_process:{type(self.execute_process)},self.my_function_description:{type(self.my_function_description)},cops_function_description:{type(cops_function_description)}')
+                self.get_logger().info(f'QQQWWWW{collaborative_robots_basic_info}')
+                self.get_logger().info(f'QQQWWWW{cops_function_description}')
+                # self.get_logger().info(f'task_content:{task_content},self.robot_id:{self.robot_id},collaborative_robots_basic_info:{collaborative_robots_basic_info},self.environment_info:{self.environment_info},self.execute_needed_input:{self.execute_needed_input},self.execute_input_variable_list:{self.execute_input_variable_list},self.execute_process:{self.execute_process},self.my_function_description:{self.my_function_description},cops_function_description:{cops_function_description}')
+                function_list = generate_function_trans_result(task_content, self.robot_id, collaborative_robots_basic_info, self.environment_info, self.execute_needed_input, eval(self.execute_input_variable_list), self.execute_process, self.my_function_description, cops_function_description)
                 self.get_logger().info(f'function_list: {function_list}')    
                 # 执行function_list的函数
-                # for function in function_list:
-                #     eval(function)
+                for function in function_list:
+                    self.get_logger().info(f'Execute function XRZ: {function}')
+                    eval(function)
+                   
            
 
-                self.update_task_status(decomposed_task_id, my_task_id, 'done')
+                self.update_task_status(decomposed_task_id, my_task_id, 'Done')
                 for basic_info in collaborative_robots_basic_info:
-                    self.update_task_status(decomposed_task_id, basic_info['task id'], 'done') 
+                    self.update_task_status(decomposed_task_id, basic_info['task id'], 'Done') 
                 response.success = True
                 return response
 
             else:
-                future_of_self_instruction = self.send_self_instruction(boss_id, self.robot_id, my_task_id, task_content, self.my_function_description, decomposed_task_id)
+                future_of_self_instruction = self.send_self_instruction(boss_id, self.robot_id, decomposed_task_id, task_content, self.my_function_description, Father_decomposed_from_task_id)
                 if future_of_self_instruction.success:
                     self.update_task_status(decomposed_task_id, my_task_id, 'prepared')
                 response.success = True
@@ -183,7 +195,7 @@ class ExecuteNode(Node):
         return response
 
     def update_task_status(self, decomposed_task_id, task_id, status):
-        client = self.create_client(StringToBool, 'managed_task_info_update', callback_group=self.callback_group)
+        client = self.create_client(StringToBool, f'managed_task_info_update', callback_group=self.callback_group)
         req = StringToBool.Request()
         req.data = json.dumps({
             'Decomposed task id': decomposed_task_id,
@@ -191,20 +203,21 @@ class ExecuteNode(Node):
             'key': 'Task status',
             'keyvalue': status
         })
-        self.get_logger().info(f'Updating task {task_id} status to "{status}" for decomposed task {decomposed_task_id}')
+        self.get_logger().info(f'Updating task {task_id} status to "{status}" for decomposed task {decomposed_task_id} to boss {self.robot_id}')
         client.call_async(req)
         # 调用broadcaster_update服务
-        self.update_broadcaster(task_id, 'Task status', 'doing')
+        self.update_broadcaster(task_id, 'Task status', status)
 
 
 
 
     def send_self_instruction (self, boss_id, robot_id, task_id, task_description, my_function_description, decomposed_task_id):
-        client = self.create_client(StringToBool, f'{boss_id}/cop_basic_info_add', callback_group=self.callback_group)
+        client = self.create_client(StringToBool, f'/{boss_id}/cop_basic_info_add', callback_group=self.callback_group)
         req = StringToBool.Request()
         req.data = json.dumps({'robot id': robot_id, 'task id': task_id, 'task description': task_description,'my function description': my_function_description, 'decomposed task id': decomposed_task_id})
         self.get_logger().info(f'sending self instruction to {boss_id}')
         future = client.call(req)
+        self.get_logger().info(f'respond from self instruction: {future}')
         return future
 
 

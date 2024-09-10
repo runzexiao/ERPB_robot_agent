@@ -75,7 +75,7 @@ def compare_ability_with_task_fast(task_content, self_abilities):
     capacity_judge_method = """
   
     Now you are a robot recruitment manager, and you need to recruit a robot to be the core member and leader to complete the task '{task_content}'. A group of robots with the abilities listed in "{self_abilities}" have come to apply. Who will you hire among them? Or will you hire none of them? Just tell me the result.
-
+    Note that all the abilities mentioned here can be performed at any specific location.
     {CAT_format_instructions}
     """
 

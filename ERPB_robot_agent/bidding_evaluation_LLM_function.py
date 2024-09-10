@@ -34,6 +34,7 @@ def compare_bidding_with_task(task, robot_abilities):
     capacity_judge_method = """
   
     Now you are a robot recruitment manager, and you need to recruit a robot to be the core member and leader to complete the task '{task}'. A group of robots with the abilities listed in "{robot_abilities}" have come to apply. Who will you hire among them? Or will you hire none of them? Just tell me the result.
+    Note that all the abilities mentioned here can be performed at any specific location.
 
     {CAT_format_instructions}
     """

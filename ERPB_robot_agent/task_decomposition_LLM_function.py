@@ -19,7 +19,7 @@ _ = load_dotenv(find_dotenv())
 api_key = os.getenv('OPENAI_API_KEY')
 
 # Initialize ChatOpenAI
-llm = ChatOpenAI(temperature=0.0, openai_api_key=api_key, model_name='gpt-4-turbo')
+llm = ChatOpenAI(temperature=0.0, openai_api_key=api_key, model_name='gpt-4o')
 
 
 
@@ -30,6 +30,13 @@ def create_task_string(task_list):
     task_string = " and ".join(task_list)
     return task_string
 
+def ensure_list(variable):
+    if isinstance(variable, str):
+        return eval(variable)  # 将字符串转换为单元素列表
+    elif isinstance(variable, list):
+        return variable  # 如果已经是列表，直接返回
+    else:
+        raise TypeError("Variable must be either a string or a list.")
 
 def remove_duplicate_dicts(input_list):
     seen = set()
@@ -76,7 +83,7 @@ def decompose_task(
         D_My_task_schema = ResponseSchema(name="My task",
                                         description="The part of the overall task that my capability can accomplish, described as precisely and specifically as possible.")
         D_Remaining_task_schema = ResponseSchema(name="Remaining task",
-                                                description="tasks that my capability cannot complete.If there is no remaining task,fill in the boolean value false.")
+                                                description="tasks that my capability cannot complete. If there is no remaining task,fill in the boolean value false.")
 
         D_response_schemas = [D_My_task_schema, D_Remaining_task_schema]
         D_output_parser = StructuredOutputParser.from_response_schemas(D_response_schemas)
@@ -84,12 +91,12 @@ def decompose_task(
 
         task_division_method = """
         I am {my_id}. 
-        Instruction: Check the overall task information enclosed in double quotes and my capability information enclosed in single quotes. Complete the following condition evaluation and task publishing. Only tell me the published results.
+        Instruction: Check the overall task information enclosed in double quotes and my capability information enclosed in single quotes. Complete the following condition evaluation and task publishing. Note that all the abilities mentioned here can be performed at any specific location. Only tell me the published results.
 
-        if(my capability is sufficient to complete the overall task)
-        then [publish my task: The specific part of the overall task that my capability can accomplish]
+        if (my capability is sufficient to complete the overall task)
+        then [publish my task: The specific task that my capability can accomplish]
         else [publish my task: The specific part of the overall task that my capability can accomplish,
-        publish remaining tasks: specific tasks that my capability cannot complete]
+        publish remaining tasks: The tasks within the overall task that exceed my capability to complete.]
 
         "{Overall_Task}"
         '{My_capability}'
@@ -216,8 +223,10 @@ def decompose_task(
         KTP_result_parser = KTP_output_parser.parse(KTP_result)
         print("Knowledge based task publishing result:", KTP_result_parser)
 
+        
+
         if KTP_result_parser["Published task list based on knowledge"]:
-            Decomposed_Task_list.extend(KTP_result_parser["Published task list based on knowledge"])
+            Decomposed_Task_list.extend(ensure_list(KTP_result_parser["Published task list based on knowledge"]))
 
         print("Knowledge based task publishing complete.")
     else:
@@ -308,7 +317,7 @@ def decompose_task(
             print("Unresolved remaining task handling result:", URTHT_result_parser)
 
             if URTHT_result_parser["Published tasks"]:
-                Decomposed_Task_list.extend(URTHT_result_parser["Published tasks"])
+                Decomposed_Task_list.extend(ensure_list(URTHT_result_parser["Published tasks"]))
 
         print("Unresolved remaining task handling complete.")
 
@@ -510,31 +519,48 @@ def decompose_task(
 
 if __name__ == "__main__":
     # Example usage
-    my_id = "c30r_0"
+    my_id = "c30r_4"
     overall_task_dict = {
-        "Content": "Build a drainage pipe driven by a water pump from point [6,6] to point [10,10], with the water pump connected to the pipe at point [10,10].",
+        "Content": " Connect the water pump to the pipe at point [10,10].",
         "Priority": 1
     }
-    my_capability = "Build a drainage pipe."
+    my_capability = "Connect the water pump to the pipe."
     #environmental_information = "There is a passable path from point M, which is the current location of me, to point B. The water pump and drainage pipe are stored at point C. The ground of the workspace is hard."
     
     # {"start point": "robot_location", "end point": "[10,10]", "path status": "passable"}
-    environmental_information ={
-    "path_information": "Any two points in the environment are passable.",
-    "robot_location": {"c30r_0":[3,0], "c30r_1":[4,0], "c30r_2":[5,0]},
-    "water_pump_location": [0,0],
-    "drainage_pipe_location": [0,0],
-    "ground_condition": "hard"
-    }
+
+     # 初始化机器人的位置信息字典
+    robot_positions = {'c30r_0':[0, 0], 'c30r_1':[0, 0], 'c30r_2':[0, 0], 'c30r_3':[0, 0], 'c30r_4':[0, 0], 'c30r_5':[0, 0]}
+    robot_positions_list = list(robot_positions.values())
+        # 初始化环境信息
+    environmental_information = {
+            "pipe_information": {
+                "pipe_status": "folded",
+                "pipe_start_location": [0, 0],
+                "pipe_end_location": [0, 0]
+            },
+            "robot_location": robot_positions,
+            "water_pump_location": [0, 0],
+            "ground_condition": "hard",
+            "paths in the environment": "Passable everywhere."
+        }
+    # environmental_information ={
+    # "path_information": "Any two points in the environment are passable.",
+    # "robot_location": {"c30r_0":[3,0], "c30r_1":[4,0], "c30r_2":[5,0]},
+    # "water_pump_location": [0,0],
+    # "drainage_pipe_location": [0,0],
+    # "ground_condition": "hard"
+    # }
 
 
     knowledge_needed_input = """
     '''json
     {
-    "connect location of the water pump and pipe": string // Please fill in the coordinates or representative letter of the water pump installation location. If neither is explicitly specified, this item should be filled in as unknown.
-    "Current location of the water pump": string // Please fill in the current coordinates or representative letter of the water pump. If neither is explicitly specified, this item should be filled in as unknown.
-    "Current location of me": string // Please fill in the coordinates or representative letter of my current location. If neither is explicitly specified, this item should be filled in as unknown.
-    "Ground state": string // If the ground is soft, fill in soft. If the ground is hard, fill in hard. If neither is explicitly specified, this item should be filled in as unknown.
+      "Location for loading or unloading work": string // Please fill in the coordinates or representative letter of the location for loading or unloading work. If neither is explicitly specified, this item should be filled in as unknown.
+      "Current location of the item to be loaded or unloaded": string // Please fill in the current coordinates or representative letter of the current location of the item to be loaded or unloaded. If neither is explicitly specified, this item should be filled in as unknown.
+      "Current location of me": string // Please fill in the coordinates or representative letter of my current location. If neither is explicitly specified, this item should be filled in as unknown.
+      "Ground state": string // If the ground is soft, fill in soft. If the ground is hard, fill in hard. If neither is explicitly specified, this item should be filled in as unknown.
+      ""
     }'''
     """
     knowledge_of_decomposition = """
@@ -549,17 +575,12 @@ if __name__ == "__main__":
     }'''
     """ % (overall_task_dict["Priority"] + 1, overall_task_dict["Priority"], overall_task_dict["Priority"] - 1)
     knowledge_template = """
-    if (there is no passable path from the point {Current location of me} to the point {connect location of the water pump and pipe})
+     if (there is no passable path from the point {Current location of me} to the point {Location for loading or unloading work})
     then [
-    if ({Ground state} == hard) 
-        then [publish preliminary task:  Clear a passable path from point {Current location of me} to the point {connect location of the water pump and pipe}.]
-    elseif ({Ground state} == soft) 
-        then [publish preliminary task: Lay down a working path to create a specialized working path from point {Current location of me} to the point {connect location of the water pump and pipe}.]
-    ]
-
-    if (the water pump is not at point {connect location of the water pump and pipe})
-    then [
-    publish preliminary task: Transport the water pump from {Current location of the water pump} to the point {connect location of the water pump and pipe}.
+      if ({Ground state} == hard)
+        then [publish preliminary task: Clear a passable path from point {Current location of me} to the point {Location for loading or unloading work}.]
+      elseif ({Ground state} == soft)
+        then [publish preliminary task: Lay down a working path to create a specialized working path from point {Current location of me} to the point {Location for loading or unloading work}.]
     ]
     """
 
@@ -579,6 +600,6 @@ if __name__ == "__main__":
         start_from_scratch
     )
 
-    # Print the results
+    # print the results
     print(f'This is the final result of task decomposition:{decomposed_task_list}')
     #print(suggestion_task_list)

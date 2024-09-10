@@ -95,7 +95,7 @@ class OperatorTaskProcessingNode(Node):
                 'Decomposed task type':'None',
                 'Decomposed task id': '0',
                 'Father decomposed from task id':'0',
-                'Boss id': '0',
+                'Boss id': 'CC0',
                 'Shadow boss' : []
             }
         else:
@@ -109,7 +109,7 @@ class OperatorTaskProcessingNode(Node):
                 'Decomposed task type':'None',
                 'Decomposed task id': '0',
                 'Father decomposed from task id':'0',
-                'Boss id': '0',
+                'Boss id': 'CC0',
                 'Shadow boss' : []
             }
             
